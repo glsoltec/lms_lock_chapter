@@ -256,3 +256,13 @@ app_license = "mit"
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
+override_doctype_class = {
+    "LMS Course": "lms_lock.lms_overrides.LMSCourseLMSLock"
+}
+
+doctype_js = {"LMS Course": "public/js/lms_chapter_lock.js"}
+
+has_permission = {
+    "Course Lesson": "lms_lock.lms_overrides.check_lesson_permission",
+    "Course Chapter": "lms_lock.lms_overrides.check_chapter_permission_hook"
+}
