@@ -95,6 +95,13 @@ def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
     return completed_count == len(lessons)
 
 
+def get_doc_field(doc, field, default=None):
+    """Obtém um campo do documento de forma segura, suportando dicionários e objetos Document."""
+    if isinstance(doc, dict):
+        return doc.get(field, default)
+    return getattr(doc, field, default)
+
+
 def check_lesson_permission(doc, ptype="read", user=None):
     """Gancho (hook) de segurança para impedir a leitura direta das aulas bloqueadas no backend."""
     if ptype != "read":
@@ -108,7 +115,8 @@ def check_lesson_permission(doc, ptype="read", user=None):
         else:
             return None
             
-    if not hasattr(doc, "course") or not doc.course:
+    course_name = get_doc_field(doc, "course")
+    if not course_name:
         return None
         
     if not user:
@@ -121,10 +129,8 @@ def check_lesson_permission(doc, ptype="read", user=None):
     if user_roles & BYPASS_ROLES:
         return None  # Administradores e gerentes seguem a permissão padrão
         
-    course_name = doc.course
-    lesson_chapter = doc.chapter
-    
-    if not course_name or not lesson_chapter:
+    lesson_chapter = get_doc_field(doc, "chapter")
+    if not lesson_chapter:
         return None
         
     # Obter os capítulos do curso ordenados
@@ -164,7 +170,8 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
         else:
             return None
             
-    if not hasattr(doc, "course") or not doc.course:
+    course_name = get_doc_field(doc, "course")
+    if not course_name:
         return None
         
     if not user:
@@ -177,8 +184,6 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
     if user_roles & BYPASS_ROLES:
         return None
         
-    course_name = doc.course
-        
     # Obter os capítulos do curso ordenados
     chapters = frappe.get_all("Chapter Reference", 
         filters={"parent": course_name}, 
@@ -187,10 +192,11 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
     
     chapter_names = [c.chapter for c in chapters]
     
-    if doc.name not in chapter_names:
+    doc_name = get_doc_field(doc, "name")
+    if not doc_name or doc_name not in chapter_names:
         return None
         
-    current_idx = chapter_names.index(doc.name)
+    current_idx = chapter_names.index(doc_name)
     
     # Primeiro capítulo sempre acessível
     if current_idx == 0:
