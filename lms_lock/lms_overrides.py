@@ -100,6 +100,17 @@ def check_lesson_permission(doc, ptype="read", user=None):
     if ptype != "read":
         return None  # Permite que as outras operações sigam a permissão padrão
         
+    if isinstance(doc, str):
+        if doc == "Course Lesson":
+            return None
+        if frappe.db.exists("Course Lesson", doc):
+            doc = frappe.get_doc("Course Lesson", doc)
+        else:
+            return None
+            
+    if not hasattr(doc, "course") or not doc.course:
+        return None
+        
     if not user:
         user = frappe.session.user
         
@@ -145,6 +156,17 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
     if ptype != "read":
         return None
         
+    if isinstance(doc, str):
+        if doc == "Course Chapter":
+            return None
+        if frappe.db.exists("Course Chapter", doc):
+            doc = frappe.get_doc("Course Chapter", doc)
+        else:
+            return None
+            
+    if not hasattr(doc, "course") or not doc.course:
+        return None
+        
     if not user:
         user = frappe.session.user
         
@@ -156,8 +178,6 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
         return None
         
     course_name = doc.course
-    if not course_name:
-        return None
         
     # Obter os capítulos do curso ordenados
     chapters = frappe.get_all("Chapter Reference", 
