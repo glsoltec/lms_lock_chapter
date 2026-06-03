@@ -4,6 +4,21 @@ from lms.lms.doctype.lms_course.lms_course import LMSCourse
 BYPASS_ROLES = {"Administrator", "System Manager", "Moderator", "Course Creator", "Batch Evaluator", "Instructor", "LMS Manager"}
 
 
+def _add_blocked_message():
+    """
+    Registra a mensagem de bloqueio no message_log do Frappe.
+    O message_log é enviado em QUALQUER resposta de API (inclusive respostas de erro/403),
+    e o frontend do Frappe exibe automaticamente como popup — ao contrário de frappe.throw
+    que pode ser silenciado pelo sistema de permissões antes de chegar ao HTTP handler.
+    """
+    frappe.msgprint(
+        msg=frappe._("Você precisa concluir o capítulo anterior antes de acessar este conteúdo."),
+        title=frappe._("Capítulo Bloqueado"),
+        indicator="orange",
+        raise_exception=False
+    )
+
+
 def _get_course_for_chapter(chapter_name):
     """Busca o curso pai de um capítulo via Chapter Reference (child table de LMS Course)."""
     return frappe.db.get_value(
@@ -203,18 +218,14 @@ def check_lesson_permission(doc, ptype="read", user=None):
 
         previous_chapter = chapter_names[current_idx - 1]
         if not is_chapter_completed(course_name, previous_chapter, user):
-            frappe.throw(
-                msg=frappe._("Você precisa concluir o capítulo anterior antes de acessar este conteúdo."),
-                title=frappe._("Capítulo Bloqueado")
-            )
+            _add_blocked_message()
+            return False
 
         return True
 
-    except frappe.ValidationError:
-        raise
     except Exception:
         frappe.log_error(frappe.get_traceback(), "lms_lock: check_lesson_permission error")
-        return None  # Em caso de erro, não bloqueia
+        return None
 
 
 def check_chapter_permission_hook(doc, ptype="read", user=None):
@@ -263,15 +274,11 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
 
         previous_chapter = chapter_names[current_idx - 1]
         if not is_chapter_completed(course_name, previous_chapter, user):
-            frappe.throw(
-                msg=frappe._("Você precisa concluir o capítulo anterior antes de acessar este conteúdo."),
-                title=frappe._("Capítulo Bloqueado")
-            )
+            _add_blocked_message()
+            return False
 
         return True
 
-    except frappe.ValidationError:
-        raise
     except Exception:
         frappe.log_error(frappe.get_traceback(), "lms_lock: check_chapter_permission_hook error")
-        return None  # Em caso de erro, não bloqueia
+        return None
