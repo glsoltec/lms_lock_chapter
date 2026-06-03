@@ -262,6 +262,8 @@ override_doctype_class = {
 
 doctype_js = {"LMS Course": "public/js/lms_chapter_lock.js"}
 
+web_include_js = ["/assets/lms_lock/js/lms_portal_lock.js"]
+
 has_permission = {
     "Course Lesson": "lms_lock.lms_overrides.check_lesson_permission",
     "Course Chapter": "lms_lock.lms_overrides.check_chapter_permission_hook"
