@@ -58,8 +58,26 @@ def get_doc_field(doc, field, default=None):
     return getattr(doc, field, default)
 
 
+# Tipos de permissão padrão do Frappe Document — quando check_permission é chamado
+# internamente pelo Frappe (ex: ao salvar, deletar), o primeiro argumento é um destes.
+_FRAPPE_PTYPES = frozenset({
+    "read", "write", "create", "delete", "submit", "cancel",
+    "amend", "print", "email", "report", "import", "export",
+    "set_user_permissions", "share"
+})
+
+
 class LMSCourseLMSLock(LMSCourse):
-    def check_permission(self, chapter):
+    def check_permission(self, ptype_or_chapter=None, *args, **kwargs):
+        # Quando o Frappe chama check_permission("write", "save") para salvar/deletar
+        # o documento, delegamos ao comportamento padrão sem interferir.
+        if ptype_or_chapter in _FRAPPE_PTYPES:
+            return super().check_permission(ptype_or_chapter, *args, **kwargs)
+
+        # Quando o LMS chama check_permission(chapter_name) para verificar acesso
+        # ao capítulo, aplicamos nossa lógica de bloqueio sequencial.
+        chapter = ptype_or_chapter
+
         if not frappe.session.user or frappe.session.user == "Guest":
             return False
 
