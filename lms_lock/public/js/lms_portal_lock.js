@@ -1,35 +1,56 @@
 (function () {
     "use strict";
 
-    // Só executa em páginas do portal LMS
-    var path = window.location.pathname;
-    if (path.indexOf("/lms") === -1 && path.indexOf("/courses") === -1) return;
-
-    var LOCK_MSG = "Você precisa concluir o capítulo anterior antes de acessar este conteúdo.";
+    var LOCK_MSG   = "Você precisa concluir o capítulo anterior antes de acessar este conteúdo.";
     var LOCK_TITLE = "Capítulo Bloqueado";
 
-    /* ------------------------------------------------------------------ */
-    /* Extrai o nome do curso da URL ou do contexto da página              */
-    /* ------------------------------------------------------------------ */
-    function getCourseFromPage() {
-        // Tenta via contexto Frappe (páginas Jinja/web)
-        if (window.course) return window.course;
-        if (window.doc && window.doc.name) return window.doc.name;
+    /* ------------------------------------------------------------------
+       Interceptor global de erros de API
+       Captura qualquer resposta HTTP 417 (ValidationError do Frappe) que
+       contenha nossa mensagem de bloqueio e exibe o popup corretamente,
+       mesmo que o LMS portal trate o erro de forma silenciosa.
+    ------------------------------------------------------------------ */
+    function installErrorInterceptor() {
+        // Intercepta fetch (Frappe v14+)
+        if (window.fetch) {
+            var _origFetch = window.fetch;
+            window.fetch = function () {
+                return _origFetch.apply(this, arguments).then(function (response) {
+                    if (response.status === 417) {
+                        response.clone().json().then(function (data) {
+                            var exc = (data.exc || data.exception || data._error_message || "");
+                            if (exc.indexOf("Capítulo Bloqueado") !== -1 ||
+                                exc.indexOf("capitulo anterior") !== -1 ||
+                                exc.indexOf("cap") !== -1 && exc.indexOf("anterior") !== -1) {
+                                showBlockedMessage();
+                            }
+                        }).catch(function () {});
+                    }
+                    return response;
+                });
+            };
+        }
 
-        // Tenta extrair da URL: /lms/courses/{course}/... ou /courses/{course}/...
-        var match = path.match(/\/(?:lms\/)?courses\/([^\/]+)/);
-        if (match) return decodeURIComponent(match[1]);
-
-        // Tenta via elemento data-course no DOM
-        var el = document.querySelector("[data-course]");
-        if (el) return el.getAttribute("data-course");
-
-        return null;
+        // Intercepta jQuery AJAX (Frappe web clássico)
+        if (window.jQuery) {
+            jQuery(document).ajaxError(function (event, jqXHR) {
+                if (jqXHR.status === 417) {
+                    try {
+                        var data = JSON.parse(jqXHR.responseText || "{}");
+                        var exc = (data.exc || data.exception || data._error_message || "");
+                        if (exc.indexOf("Capítulo Bloqueado") !== -1 ||
+                            exc.indexOf("capitulo anterior") !== -1) {
+                            showBlockedMessage();
+                        }
+                    } catch (e) {}
+                }
+            });
+        }
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Mostra a mensagem de bloqueio                                        */
-    /* ------------------------------------------------------------------ */
+    /* ------------------------------------------------------------------
+       Exibe a mensagem de bloqueio
+    ------------------------------------------------------------------ */
     function showBlockedMessage() {
         if (typeof frappe !== "undefined" && frappe.msgprint) {
             frappe.msgprint({
@@ -42,13 +63,29 @@
         }
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Aplica bloqueio visual e intercepta cliques                         */
-    /* ------------------------------------------------------------------ */
+    /* ------------------------------------------------------------------
+       Extrai o nome do curso da URL ou do contexto da página
+    ------------------------------------------------------------------ */
+    function getCourseFromPage() {
+        if (window.course)                          return window.course;
+        if (window.doc && window.doc.name)          return window.doc.name;
+
+        var el = document.querySelector("[data-course]");
+        if (el) return el.getAttribute("data-course");
+
+        // /lms/courses/{course}/... ou /courses/{course}/...
+        var match = window.location.pathname.match(/\/(?:lms\/)?courses\/([^\/]+)/);
+        if (match) return decodeURIComponent(match[1]);
+
+        return null;
+    }
+
+    /* ------------------------------------------------------------------
+       Aplica bloqueio visual e intercepta cliques nos itens bloqueados
+    ------------------------------------------------------------------ */
     function applyLocks(lockedChapters) {
         if (!lockedChapters || !lockedChapters.length) return;
 
-        // Seleciona links e itens de capítulo/aula no portal
         var selectors = [
             "a[href]",
             "[data-chapter]",
@@ -58,82 +95,69 @@
             ".chapter-card"
         ].join(", ");
 
-        var items = document.querySelectorAll(selectors);
-
-        items.forEach(function (el) {
-            var chapterName = el.getAttribute("data-chapter") || "";
-            var href = el.getAttribute("href") || "";
-            var text = el.textContent.trim();
+        document.querySelectorAll(selectors).forEach(function (el) {
+            var chapterAttr = el.getAttribute("data-chapter") || "";
+            var href        = el.getAttribute("href") || "";
+            var text        = el.textContent.trim();
 
             var isLocked = lockedChapters.some(function (ch) {
-                return (
-                    (chapterName && chapterName === ch) ||
-                    (href && href.indexOf(encodeURIComponent(ch)) !== -1) ||
-                    (href && href.indexOf(ch) !== -1) ||
-                    (text && text.indexOf(ch) !== -1)
-                );
+                return (chapterAttr && chapterAttr === ch) ||
+                       (href && (href.indexOf(encodeURIComponent(ch)) !== -1 || href.indexOf(ch) !== -1)) ||
+                       (text && text.indexOf(ch) !== -1);
             });
 
             if (!isLocked || el.hasAttribute("data-lms-locked")) return;
 
             el.setAttribute("data-lms-locked", "1");
-            el.style.opacity = "0.5";
-            el.style.cursor = "not-allowed";
-            el.style.pointerEvents = "none";
+            el.style.opacity      = "0.5";
+            el.style.cursor       = "not-allowed";
+            el.style.pointerEvents = "auto";
 
-            // Adiciona ícone de cadeado se ainda não tiver
             if (!el.querySelector(".lms-lock-icon")) {
                 var icon = document.createElement("i");
                 icon.className = "fa fa-lock lms-lock-icon";
-                icon.style.marginRight = "6px";
-                icon.style.color = "#e67e22";
+                icon.style.cssText = "margin-right:6px;color:#e67e22;";
                 el.insertBefore(icon, el.firstChild);
             }
 
-            // Reativa pointer-events só para interceptar o clique e mostrar mensagem
-            el.style.pointerEvents = "auto";
             el.addEventListener("click", function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 showBlockedMessage();
-                return false;
             }, true);
         });
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Verifica se a página atual é um capítulo bloqueado (acesso direto)  */
-    /* ------------------------------------------------------------------ */
-    function checkCurrentPageIsLocked(lockedChapters) {
-        if (!lockedChapters || !lockedChapters.length) return false;
+    /* ------------------------------------------------------------------
+       Verifica se a página atual é um capítulo bloqueado (acesso direto)
+    ------------------------------------------------------------------ */
+    function checkCurrentPageLocked(lockedChapters) {
+        var p = window.location.pathname;
         return lockedChapters.some(function (ch) {
-            return (
-                path.indexOf(encodeURIComponent(ch)) !== -1 ||
-                path.indexOf(ch) !== -1
-            );
+            return p.indexOf(encodeURIComponent(ch)) !== -1 || p.indexOf(ch) !== -1;
         });
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Inicialização principal                                              */
-    /* ------------------------------------------------------------------ */
-    function init() {
+    /* ------------------------------------------------------------------
+       Busca capítulos bloqueados e aplica proteções
+    ------------------------------------------------------------------ */
+    function loadAndApplyLocks() {
         var course = getCourseFromPage();
-        if (!course) return;
+        if (!course || typeof frappe === "undefined") return;
 
         frappe.call({
             method: "lms_lock.lms_overrides.get_locked_chapters",
-            args: { course: course },
+            args:   { course: course },
             callback: function (r) {
                 var locked = (r && r.message) ? r.message : [];
                 if (!locked.length) return;
 
-                // Se a página atual é um capítulo bloqueado, mostra mensagem
-                if (checkCurrentPageIsLocked(locked)) {
+                if (checkCurrentPageLocked(locked)) {
                     showBlockedMessage();
-                    // Redireciona para a página do curso após 2.5s
+                    var base = window.location.pathname
+                        .replace(/\/learn\/.*$/, "")
+                        .replace(/\/chapter\/.*$/, "");
                     setTimeout(function () {
-                        var base = path.replace(/\/learn\/.*$/, "").replace(/\/chapter\/.*$/, "");
                         window.location.href = base || "/lms";
                     }, 2500);
                     return;
@@ -144,35 +168,34 @@
         });
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Garante execução após o DOM estar pronto                            */
-    /* ------------------------------------------------------------------ */
-    if (typeof frappe !== "undefined") {
-        frappe.ready(function () {
-            init();
+    /* ------------------------------------------------------------------
+       Inicialização
+    ------------------------------------------------------------------ */
+    // O interceptor de erros deve ser instalado o mais cedo possível
+    installErrorInterceptor();
 
-            // MutationObserver para SPAs que re-renderizam a sidebar
-            if (!window._lmsPortalLockObserver) {
-                var target = document.querySelector(".page-content, .lms-container, main") || document.body;
-                window._lmsPortalLockObserver = new MutationObserver(function () {
-                    clearTimeout(window._lmsPortalLockTimer);
-                    window._lmsPortalLockTimer = setTimeout(function () {
-                        var course = getCourseFromPage();
-                        if (!course) return;
-                        frappe.call({
-                            method: "lms_lock.lms_overrides.get_locked_chapters",
-                            args: { course: course },
-                            callback: function (r) {
-                                applyLocks((r && r.message) ? r.message : []);
-                            }
-                        });
-                    }, 400);
-                });
-                window._lmsPortalLockObserver.observe(target, { childList: true, subtree: true });
-            }
-        });
+    // Só aplica o bloqueio visual em páginas LMS
+    var path = window.location.pathname;
+    var isLMSPage = path.indexOf("/lms") !== -1 || path.indexOf("/courses") !== -1;
+    if (!isLMSPage) return;
+
+    function init() {
+        loadAndApplyLocks();
+
+        // MutationObserver para SPAs que re-renderizam o DOM
+        if (!window._lmsPortalLockObserver) {
+            var target = document.querySelector(".page-content, .lms-container, main") || document.body;
+            window._lmsPortalLockObserver = new MutationObserver(function () {
+                clearTimeout(window._lmsPortalLockTimer);
+                window._lmsPortalLockTimer = setTimeout(loadAndApplyLocks, 400);
+            });
+            window._lmsPortalLockObserver.observe(target, { childList: true, subtree: true });
+        }
+    }
+
+    if (typeof frappe !== "undefined") {
+        frappe.ready(init);
     } else {
-        // Fallback sem Frappe (carregamento mais antigo)
         document.addEventListener("DOMContentLoaded", init);
     }
 })();

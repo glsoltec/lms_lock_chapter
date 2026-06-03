@@ -205,13 +205,12 @@ def check_lesson_permission(doc, ptype="read", user=None):
         if not is_chapter_completed(course_name, previous_chapter, user):
             frappe.throw(
                 msg=frappe._("Você precisa concluir o capítulo anterior antes de acessar este conteúdo."),
-                exc=frappe.PermissionError,
                 title=frappe._("Capítulo Bloqueado")
             )
 
         return True
 
-    except frappe.PermissionError:
+    except frappe.ValidationError:
         raise
     except Exception:
         frappe.log_error(frappe.get_traceback(), "lms_lock: check_lesson_permission error")
@@ -266,13 +265,12 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
         if not is_chapter_completed(course_name, previous_chapter, user):
             frappe.throw(
                 msg=frappe._("Você precisa concluir o capítulo anterior antes de acessar este conteúdo."),
-                exc=frappe.PermissionError,
                 title=frappe._("Capítulo Bloqueado")
             )
 
         return True
 
-    except frappe.PermissionError:
+    except frappe.ValidationError:
         raise
     except Exception:
         frappe.log_error(frappe.get_traceback(), "lms_lock: check_chapter_permission_hook error")
