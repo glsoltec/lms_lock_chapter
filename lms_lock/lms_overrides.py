@@ -36,6 +36,10 @@ class LMSCourseLMSLock(LMSCourse):
 
 @frappe.whitelist()
 def get_locked_chapters(course):
+    """Retorna uma lista de capítulos que estão bloqueados para o usuário atual."""
+    if not course:
+        return []
+
     chapters = frappe.get_all("Chapter Reference", 
         filters={"parent": course}, 
         fields=["chapter"], 
@@ -44,39 +48,47 @@ def get_locked_chapters(course):
     chapter_names = [c.chapter for c in chapters]
     
     if not frappe.session.user or frappe.session.user == "Guest":
-        return chapter_names[1:]  # Bloqueia todos a partir do segundo para convidados
+        return chapter_names[1:] if len(chapter_names) > 1 else []
         
     user_roles = set(frappe.get_roles())
     if user_roles & BYPASS_ROLES:
         return []
         
+    # Otimização: Carregar todo o progresso do usuário para este curso de uma vez
+    progress_records = frappe.get_all("LMS Course Progress",
+        filters={
+            "course": course,
+            "member": frappe.session.user,
+            "status": "Complete"
+        },
+        fields=["chapter", "lesson"])
+    
+    completed_chapters = {r.chapter for r in progress_records if r.chapter}
+    completed_lessons = {r.lesson for r in progress_records if r.lesson}
+    
     locked = []
     for i, chapter in enumerate(chapter_names):
         if i == 0:
             continue
             
         previous_chapter = chapter_names[i - 1]
-        if not is_chapter_completed(course, previous_chapter, frappe.session.user):
+        
+        # Verificar conclusão do capítulo anterior de forma otimizada
+        if not check_completion_optimized(course, previous_chapter, completed_chapters, completed_lessons):
             locked.append(chapter)
             
     return locked
 
-def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
-    """Verifica se um capítulo está concluído para o usuário (suporta aulas normais e pacotes SCORM)."""
-    # Verificar se o capítulo é um pacote SCORM
-    is_scorm = frappe.db.get_value("Course Chapter", chapter, "is_scorm_package")
-    
-    if is_scorm:
-        # Para capítulos SCORM, o progresso é registrado diretamente associado ao capítulo
-        scorm_completed = frappe.db.exists("LMS Course Progress", {
-            "course": course,
-            "member": user,
-            "chapter": chapter,
-            "status": "Complete"
-        })
-        return bool(scorm_completed)
+def check_completion_optimized(course, chapter, completed_chapters, completed_lessons):
+    """Versão otimizada da verificação de conclusão que usa dados pré-carregados."""
+    chapter_doc = frappe.get_cached_value("Course Chapter", chapter, ["is_scorm_package", "name"], as_dict=True)
+    if not chapter_doc:
+        return True
+
+    if chapter_doc.is_scorm_package:
+        return chapter in completed_chapters
         
-    # Para capítulos normais, verifica se todas as aulas associadas estão concluídas
+    # Para capítulos normais, verifica as aulas
     lessons = frappe.get_all("Lesson Reference",
         filters={"parent": chapter},
         pluck="lesson")
@@ -84,127 +96,117 @@ def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
     if not lessons:
         return True
         
-    # Contar quantas dessas aulas específicas o estudante concluiu no curso
-    completed_count = frappe.db.count("LMS Course Progress", {
-        "course": course,
-        "member": user,
-        "lesson": ["in", lessons],
-        "status": "Complete"
-    })
-    
-    return completed_count == len(lessons)
+    # Todas as aulas do capítulo devem estar no conjunto de aulas concluídas
+    return all(lesson in completed_lessons for lesson in lessons)
 
+def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
+    """Verifica se um capítulo está concluído (usado para verificações individuais de permissão)."""
+    # Usar cache para evitar múltiplas consultas em uma mesma requisição
+    cache_key = f"chapter_comp_{course}_{chapter}_{user}"
+    cached_status = frappe.cache().hget("lms_lock", cache_key)
+    if cached_status is not None:
+        return bool(cached_status)
+
+    is_scorm = frappe.db.get_value("Course Chapter", chapter, "is_scorm_package")
+    
+    completed = False
+    if is_scorm:
+        completed = frappe.db.exists("LMS Course Progress", {
+            "course": course,
+            "member": user,
+            "chapter": chapter,
+            "status": "Complete"
+        })
+    else:
+        lessons = frappe.get_all("Lesson Reference", filters={"parent": chapter}, pluck="lesson")
+        if not lessons:
+            completed = True
+        else:
+            completed_count = frappe.db.count("LMS Course Progress", {
+                "course": course,
+                "member": user,
+                "lesson": ["in", lessons],
+                "status": "Complete"
+            })
+            completed = (completed_count == len(lessons))
+    
+    frappe.cache().hset("lms_lock", cache_key, 1 if completed else 0)
+    return bool(completed)
 
 def get_doc_field(doc, field, default=None):
-    """Obtém um campo do documento de forma segura, suportando dicionários e objetos Document."""
     if isinstance(doc, dict):
         return doc.get(field, default)
     return getattr(doc, field, default)
 
-
 def check_lesson_permission(doc, ptype="read", user=None):
-    """Gancho (hook) de segurança para impedir a leitura direta das aulas bloqueadas no backend."""
     if ptype != "read":
-        return None  # Permite que as outras operações sigam a permissão padrão
-        
-    if isinstance(doc, str):
-        if doc == "Course Lesson":
-            return None
-        if frappe.db.exists("Course Lesson", doc):
-            doc = frappe.get_doc("Course Lesson", doc)
-        else:
-            return None
-            
-    course_name = get_doc_field(doc, "course")
-    if not course_name:
         return None
         
-    if not user:
-        user = frappe.session.user
+    if isinstance(doc, str):
+        if doc == "Course Lesson": return None
+        doc = frappe.get_cached_doc("Course Lesson", doc)
+            
+    course_name = get_doc_field(doc, "course")
+    if not course_name: return None
         
-    if user == "Guest" or not user:
-        return False
+    user = user or frappe.session.user
+    if user == "Guest" or not user: return False
         
     user_roles = set(frappe.get_roles(user))
-    if user_roles & BYPASS_ROLES:
-        return None  # Administradores e gerentes seguem a permissão padrão
+    if user_roles & BYPASS_ROLES: return None
         
     lesson_chapter = get_doc_field(doc, "chapter")
-    if not lesson_chapter:
-        return None
+    if not lesson_chapter: return None
         
-    # Obter os capítulos do curso ordenados
     chapters = frappe.get_all("Chapter Reference", 
         filters={"parent": course_name}, 
         fields=["chapter"], 
         order_by="idx")
     
     chapter_names = [c.chapter for c in chapters]
-    
-    if lesson_chapter not in chapter_names:
-        return None
+    if lesson_chapter not in chapter_names: return None
         
     current_idx = chapter_names.index(lesson_chapter)
-    
-    # Primeiro capítulo sempre acessível
-    if current_idx == 0:
-        return None
+    if current_idx == 0: return None
         
-    # Validar se o capítulo anterior foi 100% concluído
     previous_chapter = chapter_names[current_idx - 1]
     if not is_chapter_completed(course_name, previous_chapter, user):
-        return False  # Bloqueia explicitamente a leitura no backend
+        return False
         
-    return None  # Se estiver desbloqueado, prossegue com as verificações normais (como matrícula)
+    return None
 
 def check_chapter_permission_hook(doc, ptype="read", user=None):
-    """Gancho (hook) de segurança para impedir a leitura de capítulos bloqueados no backend."""
     if ptype != "read":
         return None
         
     if isinstance(doc, str):
-        if doc == "Course Chapter":
-            return None
-        if frappe.db.exists("Course Chapter", doc):
-            doc = frappe.get_doc("Course Chapter", doc)
-        else:
-            return None
+        if doc == "Course Chapter": return None
+        doc = frappe.get_cached_doc("Course Chapter", doc)
             
     course_name = get_doc_field(doc, "course")
-    if not course_name:
-        return None
+    if not course_name: return None
         
-    if not user:
-        user = frappe.session.user
-        
-    if user == "Guest" or not user:
-        return False
+    user = user or frappe.session.user
+    if user == "Guest" or not user: return False
         
     user_roles = set(frappe.get_roles(user))
-    if user_roles & BYPASS_ROLES:
-        return None
+    if user_roles & BYPASS_ROLES: return None
         
-    # Obter os capítulos do curso ordenados
     chapters = frappe.get_all("Chapter Reference", 
         filters={"parent": course_name}, 
         fields=["chapter"], 
         order_by="idx")
     
     chapter_names = [c.chapter for c in chapters]
-    
     doc_name = get_doc_field(doc, "name")
-    if not doc_name or doc_name not in chapter_names:
-        return None
+    
+    if not doc_name or doc_name not in chapter_names: return None
         
     current_idx = chapter_names.index(doc_name)
-    
-    # Primeiro capítulo sempre acessível
-    if current_idx == 0:
-        return None
+    if current_idx == 0: return None
         
-    # Validar se o capítulo anterior foi 100% concluído
     previous_chapter = chapter_names[current_idx - 1]
     if not is_chapter_completed(course_name, previous_chapter, user):
-        return False  # Bloqueia explicitamente a leitura do capítulo no backend
+        return False
         
     return None
