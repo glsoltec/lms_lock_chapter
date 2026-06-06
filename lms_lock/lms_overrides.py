@@ -153,12 +153,36 @@ def check_completion_optimized(course, chapter, completed_chapters, completed_le
     return all(lesson in completed_lessons for lesson in lessons)
 
 
+def _chapter_cache_key(course: str, chapter: str, user: str) -> str:
+    return f"chapter_comp_{course}_{chapter}_{user}"
+
+
+def invalidate_chapter_completion_cache(doc, method=None):
+    """
+    Chamado via doc_events em LMS Course Progress (after_insert / on_update).
+    Invalida o cache Redis quando um capítulo é marcado como Completo,
+    garantindo que o próximo acesso releia o banco e libere o capítulo seguinte.
+    """
+    if doc.get("status") == "Complete" and doc.get("course") and doc.get("member"):
+        chapter = doc.get("chapter") or doc.get("lesson")
+        if chapter:
+            cache_key = _chapter_cache_key(doc.course, chapter, doc.member)
+            frappe.cache().hdel("lms_lock", cache_key)
+
+
 def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
-    """Verifica se um capítulo está concluído (com cache Redis por requisição)."""
-    cache_key = f"chapter_comp_{course}_{chapter}_{user}"
+    """
+    Verifica se um capítulo está concluído.
+    Cache Redis apenas para status 'concluído' (True).
+    Status 'não concluído' nunca é cacheado para evitar que o cache fique
+    desatualizado após o aluno completar o capítulo.
+    """
+    cache_key = _chapter_cache_key(course, chapter, user)
+
+    # Só confia no cache se o valor for 1 (concluído)
     cached_status = frappe.cache().hget("lms_lock", cache_key)
-    if cached_status is not None:
-        return bool(cached_status)
+    if cached_status == 1 or cached_status == b"1" or cached_status is True:
+        return True
 
     is_scorm = frappe.db.get_value("Course Chapter", chapter, "is_scorm_package")
 
@@ -183,7 +207,10 @@ def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
             })
             completed = (completed_count == len(lessons))
 
-    frappe.cache().hset("lms_lock", cache_key, 1 if completed else 0)
+    # Cache apenas quando concluído; incompleto sempre relê o banco
+    if completed:
+        frappe.cache().hset("lms_lock", cache_key, 1)
+
     return completed
 
 

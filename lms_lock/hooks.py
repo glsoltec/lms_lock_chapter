@@ -268,3 +268,10 @@ has_permission = {
     "Course Lesson": "lms_lock.lms_overrides.check_lesson_permission",
     "Course Chapter": "lms_lock.lms_overrides.check_chapter_permission_hook"
 }
+
+doc_events = {
+    "LMS Course Progress": {
+        "after_insert": "lms_lock.lms_overrides.invalidate_chapter_completion_cache",
+        "on_update": "lms_lock.lms_overrides.invalidate_chapter_completion_cache",
+    }
+}
