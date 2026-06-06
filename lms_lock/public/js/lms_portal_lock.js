@@ -5,114 +5,163 @@
     var LOCK_TITLE = "Capítulo Bloqueado";
 
     /* ------------------------------------------------------------------
-       Interceptor global de erros de API
-       Captura qualquer resposta HTTP 417 (ValidationError do Frappe) que
-       contenha nossa mensagem de bloqueio e exibe o popup corretamente,
-       mesmo que o LMS portal trate o erro de forma silenciosa.
-    ------------------------------------------------------------------ */
-    function installErrorInterceptor() {
-        // Intercepta fetch (Frappe v14+)
-        if (window.fetch) {
-            var _origFetch = window.fetch;
-            window.fetch = function () {
-                return _origFetch.apply(this, arguments).then(function (response) {
-                    if (response.status === 417) {
-                        response.clone().json().then(function (data) {
-                            var exc = (data.exc || data.exception || data._error_message || "");
-                            if (exc.indexOf("Capítulo Bloqueado") !== -1 ||
-                                exc.indexOf("capitulo anterior") !== -1 ||
-                                exc.indexOf("cap") !== -1 && exc.indexOf("anterior") !== -1) {
-                                showBlockedMessage();
-                            }
-                        }).catch(function () {});
-                    }
-                    return response;
-                });
-            };
-        }
-
-        // Intercepta jQuery AJAX (Frappe web clássico)
-        if (window.jQuery) {
-            jQuery(document).ajaxError(function (event, jqXHR) {
-                if (jqXHR.status === 417) {
-                    try {
-                        var data = JSON.parse(jqXHR.responseText || "{}");
-                        var exc = (data.exc || data.exception || data._error_message || "");
-                        if (exc.indexOf("Capítulo Bloqueado") !== -1 ||
-                            exc.indexOf("capitulo anterior") !== -1) {
-                            showBlockedMessage();
-                        }
-                    } catch (e) {}
-                }
-            });
-        }
-    }
-
-    /* ------------------------------------------------------------------
-       Exibe a mensagem de bloqueio
+       Exibe mensagem de bloqueio
+       Tenta frappe.msgprint primeiro; cai em banner HTML se não disponível
     ------------------------------------------------------------------ */
     function showBlockedMessage() {
+        // Evita duplicar mensagem
+        if (document.getElementById("lms-lock-banner")) return;
+
+        // Tenta frappe.msgprint (Frappe desk/portal)
         if (typeof frappe !== "undefined" && frappe.msgprint) {
             frappe.msgprint({
-                title: __(LOCK_TITLE),
-                message: __(LOCK_MSG),
+                title: LOCK_TITLE,
+                message: LOCK_MSG,
                 indicator: "orange"
             });
-        } else {
-            alert(LOCK_TITLE + "\n\n" + LOCK_MSG);
+            return;
         }
+
+        // Fallback: banner HTML visível no topo da página
+        var banner = document.createElement("div");
+        banner.id = "lms-lock-banner";
+        banner.style.cssText = [
+            "position:fixed", "top:0", "left:0", "right:0", "z-index:99999",
+            "background:#e67e22", "color:#fff", "padding:14px 20px",
+            "font-size:15px", "font-weight:600", "text-align:center",
+            "box-shadow:0 2px 8px rgba(0,0,0,0.3)", "cursor:pointer"
+        ].join(";");
+        banner.innerHTML = "🔒 <strong>" + LOCK_TITLE + "</strong> — " + LOCK_MSG + " &nbsp;✕";
+        banner.addEventListener("click", function () { banner.remove(); });
+        document.body.insertBefore(banner, document.body.firstChild);
+        setTimeout(function () { if (banner.parentNode) banner.remove(); }, 6000);
     }
 
     /* ------------------------------------------------------------------
-       Extrai o nome do curso da URL ou do contexto da página
+       Intercepta fetch global — captura 403 e _server_messages
+    ------------------------------------------------------------------ */
+    function installFetchInterceptor() {
+        if (!window.fetch || window._lmsLockFetchPatched) return;
+        window._lmsLockFetchPatched = true;
+
+        var _origFetch = window.fetch;
+        window.fetch = function (input, init) {
+            return _origFetch.apply(this, arguments).then(function (response) {
+                var status = response.status;
+                if (status === 403 || status === 417) {
+                    response.clone().json().then(function (data) {
+                        // Verifica _server_messages (frappe.msgprint registra aqui)
+                        var msgs = data._server_messages || "";
+                        if (typeof msgs === "string" && msgs.length) {
+                            try {
+                                var parsed = JSON.parse(msgs);
+                                var arr = Array.isArray(parsed) ? parsed : [parsed];
+                                arr.forEach(function (m) {
+                                    var obj = (typeof m === "string") ? JSON.parse(m) : m;
+                                    var title = obj.title || obj.message || "";
+                                    if (title.indexOf("Bloqueado") !== -1 ||
+                                        title.indexOf("anterior") !== -1 ||
+                                        (obj.message || "").indexOf("anterior") !== -1) {
+                                        showBlockedMessage();
+                                    }
+                                });
+                            } catch (e) {}
+                        }
+                        // Fallback: verifica exception/exc
+                        var exc = data.exc || data.exception || data._error_message || "";
+                        if (typeof exc === "string" &&
+                            (exc.indexOf("Bloqueado") !== -1 || exc.indexOf("anterior") !== -1)) {
+                            showBlockedMessage();
+                        }
+                    }).catch(function () {});
+                }
+                return response;
+            });
+        };
+    }
+
+    /* ------------------------------------------------------------------
+       Intercepta jQuery AJAX (fallback para chamadas legadas)
+    ------------------------------------------------------------------ */
+    function installJQueryInterceptor() {
+        if (!window.jQuery) return;
+        jQuery(document).ajaxComplete(function (event, xhr, settings) {
+            var status = xhr.status;
+            if (status !== 403 && status !== 417) return;
+            try {
+                var data = JSON.parse(xhr.responseText || "{}");
+                var msgs = data._server_messages || "";
+                if (typeof msgs === "string" && msgs.indexOf("Bloqueado") !== -1) {
+                    showBlockedMessage();
+                    return;
+                }
+                var exc = data.exc || data.exception || "";
+                if (typeof exc === "string" &&
+                    (exc.indexOf("Bloqueado") !== -1 || exc.indexOf("anterior") !== -1)) {
+                    showBlockedMessage();
+                }
+            } catch (e) {}
+        });
+    }
+
+    /* ------------------------------------------------------------------
+       Detecta o nome do curso na URL ou contexto da página
     ------------------------------------------------------------------ */
     function getCourseFromPage() {
-        if (window.course)                          return window.course;
-        if (window.doc && window.doc.name)          return window.doc.name;
+        // Contexto Frappe/LMS injetado na página
+        if (window.course)                 return window.course;
+        if (window.doc && window.doc.name) return window.doc.name;
 
         var el = document.querySelector("[data-course]");
         if (el) return el.getAttribute("data-course");
 
-        // /lms/courses/{course}/... ou /courses/{course}/...
-        var match = window.location.pathname.match(/\/(?:lms\/)?courses\/([^\/]+)/);
-        if (match) return decodeURIComponent(match[1]);
+        // URLs: /lms/courses/{course}/... ou /courses/{course}/...
+        var m = window.location.pathname.match(/\/(?:lms\/)?courses\/([^\/]+)/);
+        if (m) return decodeURIComponent(m[1]);
 
         return null;
     }
 
     /* ------------------------------------------------------------------
-       Aplica bloqueio visual e intercepta cliques nos itens bloqueados
+       Aplica bloqueio visual e intercepta cliques
     ------------------------------------------------------------------ */
     function applyLocks(lockedChapters) {
         if (!lockedChapters || !lockedChapters.length) return;
 
+        // Seletores comuns do LMS v16 portal
         var selectors = [
             "a[href]",
             "[data-chapter]",
+            ".chapter-item a",
             ".chapter-item",
+            ".lesson-item a",
             ".lesson-item",
             ".sidebar-item",
-            ".chapter-card"
+            ".chapter-card",
+            ".chapter-link",
+            ".lms-chapter"
         ].join(", ");
 
         document.querySelectorAll(selectors).forEach(function (el) {
-            var chapterAttr = el.getAttribute("data-chapter") || "";
-            var href        = el.getAttribute("href") || "";
-            var text        = el.textContent.trim();
+            var chAttr = el.getAttribute("data-chapter") || "";
+            var href   = (el.getAttribute("href") || el.getAttribute("data-href") || "");
+            var text   = el.textContent.trim();
 
             var isLocked = lockedChapters.some(function (ch) {
-                return (chapterAttr && chapterAttr === ch) ||
-                       (href && (href.indexOf(encodeURIComponent(ch)) !== -1 || href.indexOf(ch) !== -1)) ||
-                       (text && text.indexOf(ch) !== -1);
+                return (chAttr && chAttr === ch) ||
+                       (href && (href.indexOf(encodeURIComponent(ch)) !== -1 ||
+                                 href.indexOf(ch) !== -1)) ||
+                       (text && text === ch);
             });
 
             if (!isLocked || el.hasAttribute("data-lms-locked")) return;
 
             el.setAttribute("data-lms-locked", "1");
-            el.style.opacity      = "0.5";
-            el.style.cursor       = "not-allowed";
+            el.style.opacity       = "0.5";
+            el.style.cursor        = "not-allowed";
             el.style.pointerEvents = "auto";
 
+            // Ícone de cadeado
             if (!el.querySelector(".lms-lock-icon")) {
                 var icon = document.createElement("i");
                 icon.className = "fa fa-lock lms-lock-icon";
@@ -120,16 +169,17 @@
                 el.insertBefore(icon, el.firstChild);
             }
 
+            // Clique: bloqueia navegação e mostra mensagem
             el.addEventListener("click", function (e) {
                 e.preventDefault();
-                e.stopPropagation();
+                e.stopImmediatePropagation();
                 showBlockedMessage();
             }, true);
         });
     }
 
     /* ------------------------------------------------------------------
-       Verifica se a página atual é um capítulo bloqueado (acesso direto)
+       Verifica se a URL atual corresponde a um capítulo bloqueado
     ------------------------------------------------------------------ */
     function checkCurrentPageLocked(lockedChapters) {
         var p = window.location.pathname;
@@ -139,42 +189,56 @@
     }
 
     /* ------------------------------------------------------------------
-       Busca capítulos bloqueados e aplica proteções
+       Busca capítulos bloqueados via API e aplica proteções
     ------------------------------------------------------------------ */
     function loadAndApplyLocks() {
         var course = getCourseFromPage();
-        if (!course || typeof frappe === "undefined") return;
+        if (!course) return;
 
-        frappe.call({
-            method: "lms_lock.lms_overrides.get_locked_chapters",
-            args:   { course: course },
-            callback: function (r) {
-                var locked = (r && r.message) ? r.message : [];
-                if (!locked.length) return;
+        // Usa fetch direto (sem interceptor — evita loop)
+        var url = "/api/method/lms_lock.lms_overrides.get_locked_chapters"
+                + "?course=" + encodeURIComponent(course);
 
-                if (checkCurrentPageLocked(locked)) {
-                    showBlockedMessage();
-                    var base = window.location.pathname
-                        .replace(/\/learn\/.*$/, "")
-                        .replace(/\/chapter\/.*$/, "");
-                    setTimeout(function () {
-                        window.location.href = base || "/lms";
-                    }, 2500);
-                    return;
-                }
+        var doApply = function (locked) {
+            if (!locked || !locked.length) return;
 
-                applyLocks(locked);
+            if (checkCurrentPageLocked(locked)) {
+                showBlockedMessage();
+                // Redireciona para a página do curso após 2,5 s
+                var base = window.location.pathname
+                    .replace(/\/learn\/.*$/, "")
+                    .replace(/\/chapter\/.*$/, "");
+                setTimeout(function () {
+                    window.location.href = base || "/lms";
+                }, 2500);
+                return;
             }
-        });
+
+            applyLocks(locked);
+        };
+
+        // Prefere frappe.call se disponível (já tem CSRF)
+        if (typeof frappe !== "undefined" && frappe.call) {
+            frappe.call({
+                method: "lms_lock.lms_overrides.get_locked_chapters",
+                args:   { course: course },
+                callback: function (r) { doApply((r && r.message) ? r.message : []); }
+            });
+        } else {
+            // Fallback puro fetch
+            fetch(url, { credentials: "same-origin" })
+                .then(function (r) { return r.json(); })
+                .then(function (d) { doApply((d && d.message) ? d.message : []); })
+                .catch(function () {});
+        }
     }
 
     /* ------------------------------------------------------------------
        Inicialização
     ------------------------------------------------------------------ */
-    // O interceptor de erros deve ser instalado o mais cedo possível
-    installErrorInterceptor();
+    installFetchInterceptor();
+    installJQueryInterceptor();
 
-    // Só aplica o bloqueio visual em páginas LMS
     var path = window.location.pathname;
     var isLMSPage = path.indexOf("/lms") !== -1 || path.indexOf("/courses") !== -1;
     if (!isLMSPage) return;
@@ -184,7 +248,10 @@
 
         // MutationObserver para SPAs que re-renderizam o DOM
         if (!window._lmsPortalLockObserver) {
-            var target = document.querySelector(".page-content, .lms-container, main") || document.body;
+            var target = document.querySelector(
+                ".page-content, .lms-container, .course-details, main"
+            ) || document.body;
+
             window._lmsPortalLockObserver = new MutationObserver(function () {
                 clearTimeout(window._lmsPortalLockTimer);
                 window._lmsPortalLockTimer = setTimeout(loadAndApplyLocks, 400);
@@ -193,7 +260,7 @@
         }
     }
 
-    if (typeof frappe !== "undefined") {
+    if (typeof frappe !== "undefined" && frappe.ready) {
         frappe.ready(init);
     } else {
         document.addEventListener("DOMContentLoaded", init);
