@@ -1,6 +1,39 @@
 import frappe
 from lms.lms.doctype.lms_course.lms_course import LMSCourse
 
+
+def inject_portal_script(response):
+    """
+    Hook after_request: injeta lms_portal_lock.js em todas as páginas HTML do LMS.
+    Necessário porque o LMS usa um template Vue SPA customizado que não processa
+    o hook web_include_js do Frappe.
+    """
+    try:
+        content_type = response.headers.get("Content-Type", "")
+        if "text/html" not in content_type:
+            return
+
+        path = ""
+        try:
+            path = frappe.request.path
+        except Exception:
+            return
+
+        if not path.startswith("/lms"):
+            return
+
+        data = response.get_data()
+        if b"</body>" not in data:
+            return
+
+        script_tag = (
+            b'\n<script src="/assets/lms_lock/js/lms_portal_lock.js">'
+            b"</script>"
+        )
+        response.set_data(data.replace(b"</body>", script_tag + b"</body>", 1))
+    except Exception:
+        pass
+
 BYPASS_ROLES = {"Administrator", "System Manager", "Moderator", "Course Creator", "Batch Evaluator", "Instructor", "LMS Manager"}
 
 

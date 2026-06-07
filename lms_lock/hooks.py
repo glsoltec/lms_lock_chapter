@@ -269,6 +269,8 @@ has_permission = {
     "Course Chapter": "lms_lock.lms_overrides.check_chapter_permission_hook"
 }
 
+after_request = ["lms_lock.lms_overrides.inject_portal_script"]
+
 doc_events = {
     "LMS Course Progress": {
         "after_insert": "lms_lock.lms_overrides.invalidate_chapter_completion_cache",
