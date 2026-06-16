@@ -46,8 +46,9 @@ def before_install() -> None:
 	frappe.logger().info("Validating requirements for lms_lock_chapter app installation...")
 
 	try:
-		# Validate that the 'lms' or 'frappe-lms' app is installed
-		if not (frappe.db.exists("App", "lms") or frappe.db.exists("App", "frappe-lms")):
+		# Validate that the 'lms' or 'frappe-lms' app is installed on the site
+		installed_apps = frappe.get_installed_apps()
+		if not ("lms" in installed_apps or "frappe-lms" in installed_apps):
 			frappe.throw(frappe._("The app 'lms' (frappe-lms) is required to use lms_lock_chapter."))
 
 		frappe.logger().info("Pre-installation validations completed.")
