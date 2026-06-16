@@ -53,31 +53,9 @@ def _clean_redis_cache():
 	frappe.logger().info("Limpando cache Redis do app lms_lock_chapter...")
 
 	try:
-		cache = frappe.cache()
-
-		# Remove todas as chaves de cache de conclusão de capítulos
-		# Padrão: chapter_comp_{course}_{chapter}_{user}
-		cursor = 0
-		cleaned = 0
-
-		# Usar SCAN para iterar sobre chaves sem bloquear Redis
-		while True:
-			cursor, keys = cache.conn.scan(cursor=cursor, match="chapter_comp_*", count=100)
-			if keys:
-				for key in keys:
-					cache.conn.delete(key)
-					cleaned += 1
-
-			if cursor == 0:
-				break
-
-		# Remove a hash lms_lock_chapter (se existir)
-		try:
-			cache.conn.delete("lms_lock_chapter")
-		except Exception:
-			pass
-
-		frappe.logger().info(f"Cache Redis limpo: {cleaned} chaves removidas.")
+		# Remove o hash lms_lock_chapter de forma segura e site-aware
+		frappe.cache().delete_value("lms_lock_chapter")
+		frappe.logger().info("Cache Redis limpo: Hash lms_lock_chapter removido com sucesso.")
 
 	except Exception as e:
 		frappe.logger().warning(f"Erro ao limpar cache Redis: {str(e)}")

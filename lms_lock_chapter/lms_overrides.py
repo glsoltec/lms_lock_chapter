@@ -193,11 +193,19 @@ def _chapter_cache_key(course: str, chapter: str, user: str) -> str:
 def invalidate_chapter_completion_cache(doc, method=None):
     """
     Chamado via doc_events em LMS Course Progress (after_insert / on_update).
-    Invalida o cache Redis quando um capítulo é marcado como Completo,
+    Invalida o cache Redis quando um capítulo ou aula pertencente a ele é concluído,
     garantindo que o próximo acesso releia o banco e libere o capítulo seguinte.
     """
     if doc.get("status") == "Complete" and doc.get("course") and doc.get("member"):
-        chapter = doc.get("chapter") or doc.get("lesson")
+        chapter = doc.get("chapter")
+        if not chapter and doc.get("lesson"):
+            # Se for progresso de aula, busca o capítulo pai dessa aula
+            chapter = frappe.db.get_value(
+                "Lesson Reference",
+                {"lesson": doc.get("lesson"), "parenttype": "Course Chapter"},
+                "parent"
+            )
+
         if chapter:
             cache_key = _chapter_cache_key(doc.course, chapter, doc.member)
             frappe.cache().hdel("lms_lock_chapter", cache_key)
@@ -251,8 +259,7 @@ def check_lesson_permission(doc, ptype="read", user=None):
     """
     Hook has_permission para Course Lesson.
     Retorna False se a aula pertence a um capítulo bloqueado.
-    Retorna True se desbloqueada (garante acesso mesmo sem permissão de role).
-    Retorna None apenas quando não conseguimos determinar o contexto.
+    Retorna None se desbloqueada (delega a permissão padrão do Frappe/LMS).
     """
     try:
         if ptype != "read":
@@ -282,7 +289,7 @@ def check_lesson_permission(doc, ptype="read", user=None):
 
         user_roles = set(frappe.get_roles(user))
         if user_roles & BYPASS_ROLES:
-            return True
+            return None
 
         chapter_names = _get_ordered_chapters(course_name)
         if not chapter_names or lesson_chapter not in chapter_names:
@@ -292,14 +299,14 @@ def check_lesson_permission(doc, ptype="read", user=None):
 
         # Primeiro capítulo: sempre liberado
         if current_idx == 0:
-            return True
+            return None
 
         previous_chapter = chapter_names[current_idx - 1]
         if not is_chapter_completed(course_name, previous_chapter, user):
             _add_blocked_message()
             return False
 
-        return True
+        return None
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "lms_lock_chapter: check_lesson_permission error")
@@ -310,8 +317,7 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
     """
     Hook has_permission para Course Chapter.
     Retorna False se o capítulo está bloqueado (anterior não concluído).
-    Retorna True se desbloqueado (garante acesso mesmo sem permissão de role).
-    Retorna None quando não conseguimos determinar o contexto.
+    Retorna None se desbloqueado (delega a permissão padrão do Frappe/LMS).
     """
     try:
         if ptype != "read":
@@ -338,7 +344,7 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
 
         user_roles = set(frappe.get_roles(user))
         if user_roles & BYPASS_ROLES:
-            return True
+            return None
 
         chapter_names = _get_ordered_chapters(course_name)
         if not chapter_names or chapter_name not in chapter_names:
@@ -348,14 +354,14 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
 
         # Primeiro capítulo: sempre liberado
         if current_idx == 0:
-            return True
+            return None
 
         previous_chapter = chapter_names[current_idx - 1]
         if not is_chapter_completed(course_name, previous_chapter, user):
             _add_blocked_message()
             return False
 
-        return True
+        return None
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "lms_lock_chapter: check_chapter_permission_hook error")

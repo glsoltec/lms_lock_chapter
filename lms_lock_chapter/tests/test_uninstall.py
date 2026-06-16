@@ -22,18 +22,18 @@ class TestLmsLockChapterUninstall(FrappeTestCase):
 
 		cache = frappe.cache()
 
-		# Simular dados de cache do app
+		# Simular dados de cache do app usando o hash lms_lock_chapter
 		test_key = "chapter_comp_test_course_test_chapter_test_user"
-		cache.set_value(test_key, "1")
+		cache.hset("lms_lock_chapter", test_key, 1)
 
-		# Verificar que a chave foi criada
-		self.assertIsNotNone(cache.get_value(test_key))
+		# Verificar que a chave foi criada no hash
+		self.assertEqual(cache.hget("lms_lock_chapter", test_key), 1)
 
 		# Limpar cache
 		_clean_redis_cache()
 
-		# Verificar que a chave foi removida
-		self.assertIsNone(cache.get_value(test_key))
+		# Verificar que a chave (e o hash) foi removida
+		self.assertIsNone(cache.hget("lms_lock_chapter", test_key))
 
 	def test_no_system_data_loss_on_uninstall(self):
 		"""
