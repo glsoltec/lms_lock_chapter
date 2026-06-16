@@ -98,13 +98,15 @@ class TestLmsLockChapterInstall(FrappeTestCase):
 
 	def test_frappe_lms_app_required(self) -> None:
 		"""
-		Validates that the frappe-lms app is required.
+		Validates that the lms or frappe-lms app is required.
 		"""
 		# This test documents the dependency
 		self.assertTrue(
+			frappe.db.exists("App", "lms") or
 			frappe.db.exists("App", "frappe-lms") or
+			"lms" in frappe.get_installed_apps() or
 			"frappe-lms" in frappe.get_installed_apps(),
-			"frappe-lms must be installed"
+			"lms or frappe-lms must be installed"
 		)
 
 	def test_cache_initialized_on_install(self) -> None:
