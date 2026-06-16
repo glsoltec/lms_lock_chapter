@@ -1,5 +1,5 @@
 """
-Testes para validar cleanup e desinstalação do app lms_lock_chapter.
+Tests to validate the cleanup, installation, and security functions of the lms_lock_chapter app.
 """
 
 import unittest
@@ -8,38 +8,38 @@ from frappe.tests.utils import FrappeTestCase
 
 
 class TestLmsLockChapterUninstall(FrappeTestCase):
-	"""Testes para garantir que a desinstalação remove todas as associações."""
+	"""Tests to ensure that uninstallation removes all associations correctly."""
 
-	def setUp(self):
-		"""Prepara ambiente de teste."""
+	def setUp(self) -> None:
+		"""Prepares the test environment."""
 		pass
 
-	def test_cache_cleanup_on_uninstall(self):
+	def test_cache_cleanup_on_uninstall(self) -> None:
 		"""
-		Valida que o cache Redis é limpo corretamente.
+		Validates that the Redis cache is cleared correctly.
 		"""
 		from lms_lock_chapter.uninstall import _clean_redis_cache
 
 		cache = frappe.cache()
 
-		# Simular dados de cache do app usando o hash lms_lock_chapter
+		# Simulate app cache data using the lms_lock_chapter hash
 		test_key = "chapter_comp_test_course_test_chapter_test_user"
 		cache.hset("lms_lock_chapter", test_key, 1)
 
-		# Verificar que a chave foi criada no hash
+		# Verify that the key was created in the hash
 		self.assertEqual(cache.hget("lms_lock_chapter", test_key), 1)
 
-		# Limpar cache
+		# Clear cache
 		_clean_redis_cache()
 
-		# Verificar que a chave (e o hash) foi removida
+		# Verify that the key (and the hash) was removed
 		self.assertIsNone(cache.hget("lms_lock_chapter", test_key))
 
-	def test_no_system_data_loss_on_uninstall(self):
+	def test_no_system_data_loss_on_uninstall(self) -> None:
 		"""
-		Valida que dados do sistema (cursos, capítulos, aulas) não são perdidos.
+		Validates that system data (courses, chapters, lessons) is not lost.
 		"""
-		# Este teste garante que a desinstalação não afeta DocTypes do LMS
+		# This test ensures that uninstallation does not affect LMS DocTypes.
 		doctypes_to_preserve = [
 			"LMS Course",
 			"Course Chapter",
@@ -48,78 +48,94 @@ class TestLmsLockChapterUninstall(FrappeTestCase):
 		]
 
 		for doctype in doctypes_to_preserve:
-			# Verificar que o DocType ainda existe após desinstalação teórica
+			# Verify that the DocType still exists after theoretical uninstallation
 			self.assertTrue(
 				frappe.db.exists("DocType", doctype),
-				f"DocType {doctype} deve ser preservado após desinstalação"
+				f"DocType {doctype} must be preserved after uninstall"
 			)
 
-	def test_permission_hooks_removed(self):
+	def test_permission_hooks_removed(self) -> None:
 		"""
-		Valida que hooks de permissão são desativados após desinstalação.
-		Nota: Frappe automaticamente desativa hooks quando app é removido.
+		Validates that permission hooks are deactivated after uninstall.
+		Note: Frappe automatically deactivates hooks when the app is removed.
 		"""
-		# Após a desinstalação, os hooks em lms_overrides não devem estar ativos
-		# Este teste é principalmente para documentação do comportamento esperado
+		# After uninstallation, hooks in lms_overrides should not be active.
+		# This test is mainly for documenting the expected behavior.
 		pass
 
-	def test_override_classes_removed(self):
+	def test_override_classes_removed(self) -> None:
 		"""
-		Valida que classes de override são removidas.
-		Nota: Frappe carrega overrides via module cache que é limpo na desinstalação.
+		Validates that override classes are removed.
+		Note: Frappe loads overrides via module cache which is cleared upon uninstall.
 		"""
-		# As classes em lms_overrides.py não devem estar ativas após desinstalação
-		# Frappe automaticamente remove do module cache
+		# Override classes in lms_overrides.py should not be active after uninstall.
+		# Frappe automatically removes them from the module cache.
 		pass
 
-	def test_chapters_become_accessible_after_uninstall(self):
+	def test_chapters_become_accessible_after_uninstall(self) -> None:
 		"""
-		Valida que após desinstalação, todos os capítulos ficam acessíveis.
+		Validates that after uninstall, all chapters become accessible.
 		"""
-		# Após a desinstalação, as funções de verificação de permissão
-		# não devem mais aplicar bloqueio sequencial
-		# Os usuários podem acessar qualquer capítulo
+		# After uninstallation, permission check hooks should no longer block sequential access.
+		# Users should be able to access any chapter.
 		pass
 
 
 class TestLmsLockChapterInstall(FrappeTestCase):
-	"""Testes para garantir que a instalação funciona corretamente."""
+	"""Tests to ensure that the installation works correctly."""
 
-	def test_required_doctypes_exist(self):
+	def test_required_doctypes_exist(self) -> None:
 		"""
-		Valida que os DocTypes obrigatórios existem.
+		Validates that required DocTypes exist.
 		"""
 		from lms_lock_chapter.install import _validate_doctypes
 
-		# Não deve lançar exceção se DocTypes existem
+		# Should not raise exception if DocTypes exist
 		try:
 			_validate_doctypes()
 		except frappe.ValidationError as e:
-			self.fail(f"_validate_doctypes() levantou ValidationError: {str(e)}")
+			self.fail(f"_validate_doctypes() raised ValidationError: {str(e)}")
 
-	def test_frappe_lms_app_required(self):
+	def test_frappe_lms_app_required(self) -> None:
 		"""
-		Valida que o app frappe-lms é obrigatório.
+		Validates that the frappe-lms app is required.
 		"""
-		# Este teste apenas documenta a dependência
+		# This test documents the dependency
 		self.assertTrue(
 			frappe.db.exists("App", "frappe-lms") or
 			"frappe-lms" in frappe.get_installed_apps(),
-			"frappe-lms deve estar instalado"
+			"frappe-lms must be installed"
 		)
 
-	def test_cache_initialized_on_install(self):
+	def test_cache_initialized_on_install(self) -> None:
 		"""
-		Valida que cache é inicializado corretamente.
+		Validates that cache is initialized correctly.
 		"""
 		from lms_lock_chapter.install import _setup_cache
 
-		# Não deve lançar exceção
+		# Should not raise exception
 		try:
 			_setup_cache()
 		except Exception as e:
-			self.fail(f"_setup_cache() levantou exceção: {str(e)}")
+			self.fail(f"_setup_cache() raised exception: {str(e)}")
+
+
+class TestLmsLockChapterSecurity(FrappeTestCase):
+	"""Tests to validate security and access control features."""
+
+	def test_get_locked_chapters_permission(self) -> None:
+		"""
+		Validates that get_locked_chapters enforces read permissions on LMS Course.
+		"""
+		from lms_lock_chapter.lms_overrides import get_locked_chapters
+
+		# Try to call get_locked_chapters on a course that doesn't exist
+		# This triggers a permission check that fails, raising PermissionError.
+		course_name = "Non-existent Secret Course"
+		with self.assertRaises(frappe.PermissionError):
+			get_locked_chapters(course_name)
 
 
 if __name__ == "__main__":
 	unittest.main()
+

@@ -1,82 +1,81 @@
 """
-Instalação e configuração inicial do app lms_lock_chapter.
+Initial installation and configuration of the lms_lock_chapter app.
 
-Realiza setup necessário quando o app é instalado.
+Performs the necessary setup when the app is installed.
 """
 
 import frappe
 
 
-def after_install():
+def after_install() -> None:
 	"""
-	Hook chamado APÓS a instalação do app.
-	Realiza configurações iniciais necessárias.
+	Hook called AFTER the app is installed.
+	Performs necessary initial configurations.
 	"""
-	frappe.logger().info("Configurando app lms_lock_chapter após instalação...")
+	frappe.logger().info("Configuring lms_lock_chapter app after installation...")
 
 	try:
-		# 1. Criar cache namespace se necessário
+		# 1. Set up cache namespace if needed
 		_setup_cache()
 
-		# 2. Validar DocTypes necessários
+		# 2. Validate required DocTypes
 		_validate_doctypes()
 
-		frappe.logger().info("Configuração do app lms_lock_chapter concluída com sucesso.")
+		frappe.logger().info("Configuration of lms_lock_chapter app completed successfully.")
 		frappe.msgprint(
-			msg="App lms_lock_chapter instalado com sucesso. "
-			"Acesso sequencial a capítulos está ativo.",
-			title="Instalação Concluída",
+			msg=frappe._("App lms_lock_chapter installed successfully. Sequential chapter access is active."),
+			title=frappe._("Installation Completed"),
 			indicator="green"
 		)
 
 	except Exception as e:
-		frappe.logger().error(f"Erro na instalação do app lms_lock_chapter: {str(e)}")
+		frappe.logger().error(f"Error during installation of lms_lock_chapter app: {str(e)}")
 		frappe.msgprint(
-			msg=f"Erro na instalação: {str(e)}. Verifique os logs.",
-			title="Erro na Instalação",
+			msg=frappe._("Installation error: {0}. Please check the logs.").format(str(e)),
+			title=frappe._("Installation Error"),
 			indicator="red"
 		)
 		raise
 
 
-def before_install():
+def before_install() -> None:
 	"""
-	Hook chamado ANTES da instalação do app.
-	Realiza validações e preparações.
+	Hook called BEFORE the app is installed.
+	Performs validations and preparations.
 	"""
-	frappe.logger().info("Validando requisitos para instalação do app lms_lock_chapter...")
+	frappe.logger().info("Validating requirements for lms_lock_chapter app installation...")
 
 	try:
-		# Validar que o app frappe-lms está instalado
+		# Validate that the 'frappe-lms' app is installed
 		if not frappe.db.exists("App", "frappe-lms"):
-			frappe.throw("O app 'frappe-lms' é obrigatório para usar lms_lock_chapter.")
+			frappe.throw(frappe._("The app 'frappe-lms' is required to use lms_lock_chapter."))
 
-		frappe.logger().info("Validações de pré-instalação concluídas.")
+		frappe.logger().info("Pre-installation validations completed.")
 
 	except frappe.ValidationError:
 		raise
 	except Exception as e:
-		frappe.logger().warning(f"Erro na validação de pré-instalação: {str(e)}")
+		frappe.logger().warning(f"Error in pre-installation validation: {str(e)}")
 
 
-def _setup_cache():
+def _setup_cache() -> None:
 	"""
-	Configura cache namespace para o app.
-	Garante que a aplicação tem espaço de cache isolado no Redis.
+	Configures the cache namespace for the app.
+	Ensures the app has isolated cache space in Redis.
 	"""
 	try:
 		cache = frappe.cache()
-		# Testa conectividade com cache
+		# Test cache connectivity
 		cache.set_value("lms_lock_chapter_test", "ok", expires_in_sec=60)
 		cache.get_value("lms_lock_chapter_test")
-		frappe.logger().info("Cache Redis configurado com sucesso.")
+		frappe.logger().info("Redis cache configured successfully.")
 	except Exception as e:
-		frappe.logger().warning(f"Erro ao configurar cache: {str(e)}")
+		frappe.logger().warning(f"Error configuring cache: {str(e)}")
 
 
-def _validate_doctypes():
+def _validate_doctypes() -> None:
 	"""
-	Valida que todos os DocTypes necessários existem e estão corretos.
+	Validates that all required DocTypes exist and are correct.
 	"""
 	required_doctypes = [
 		"LMS Course",
@@ -87,7 +86,9 @@ def _validate_doctypes():
 
 	for doctype in required_doctypes:
 		if not frappe.db.exists("DocType", doctype):
-			frappe.throw(f"DocType obrigatório '{doctype}' não encontrado. "
-						f"Instale o app 'frappe-lms' primeiro.")
+			frappe.throw(
+				frappe._("Required DocType '{0}' not found. Please install the 'frappe-lms' app first.").format(doctype)
+			)
 
-	frappe.logger().info("Todos os DocTypes obrigatórios foram validados.")
+	frappe.logger().info("All required DocTypes have been validated.")
+

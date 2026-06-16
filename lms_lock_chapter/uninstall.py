@@ -1,102 +1,99 @@
 """
-Limpeza e desinstalação do app lms_lock_chapter.
+Cleanup and uninstallation of the lms_lock_chapter app.
 
-Quando o app é removido, este módulo garante que:
-- Todos os overrides sejam descarregados
-- Hooks de permissão sejam removidos
-- Cache Redis seja limpo
-- Nenhum dado do usuário ou do LMS seja perdido
+When the app is removed, this module ensures that:
+- All overrides are unloaded
+- Permission hooks are removed
+- Redis cache is cleared
+- No user or LMS data is lost
 """
 
 import frappe
 
 
-def after_uninstall():
+def after_uninstall() -> None:
 	"""
-	Hook chamado APÓS a desinstalação do app.
-	Remove todas as associações criadas pelo app sem afetar dados do LMS.
+	Hook called AFTER the app is uninstalled.
+	Removes all associations created by the app without affecting LMS data.
 	"""
-	frappe.logger().info("Iniciando limpeza do app lms_lock_chapter...")
+	frappe.logger().info("Starting cleanup for lms_lock_chapter app...")
 
 	try:
-		# 1. Limpar cache Redis
+		# 1. Clear Redis cache
 		_clean_redis_cache()
 
-		# 2. Remover document events
+		# 2. Remove document events
 		_remove_doc_events()
 
-		# 3. Remover client scripts customizados
+		# 3. Remove custom client scripts
 		_remove_client_scripts()
 
-		# 4. Limpar session data/flags
+		# 4. Clean session data/flags
 		_clean_session_data()
 
-		frappe.logger().info("Limpeza do app lms_lock_chapter concluída com sucesso.")
+		frappe.logger().info("Cleanup of lms_lock_chapter app completed successfully.")
 		frappe.msgprint(
-			msg="App lms_lock_chapter removido com sucesso. Todos os capítulos estão agora acessíveis.",
-			title="Desinstalação Concluída",
+			msg=frappe._("App lms_lock_chapter removed successfully. All chapters are now accessible."),
+			title=frappe._("Uninstallation Completed"),
 			indicator="green"
 		)
 
 	except Exception as e:
-		frappe.logger().error(f"Erro durante limpeza do app lms_lock_chapter: {str(e)}")
+		frappe.logger().error(f"Error during cleanup of lms_lock_chapter app: {str(e)}")
 		frappe.msgprint(
-			msg=f"Erro na limpeza: {str(e)}. Verifique os logs.",
-			title="Erro na Desinstalação",
+			msg=frappe._("Cleanup error: {0}. Please check the logs.").format(str(e)),
+			title=frappe._("Uninstallation Error"),
 			indicator="red"
 		)
 		raise
 
 
-def _clean_redis_cache():
-	"""Remove todas as chaves de cache criadas pelo app no Redis."""
-	frappe.logger().info("Limpando cache Redis do app lms_lock_chapter...")
+def _clean_redis_cache() -> None:
+	"""Removes all cache keys created by the app in Redis."""
+	frappe.logger().info("Clearing Redis cache for lms_lock_chapter app...")
 
 	try:
-		# Remove o hash lms_lock_chapter de forma segura e site-aware
+		# Remove the lms_lock_chapter hash in a safe and site-aware manner
 		frappe.cache().delete_value("lms_lock_chapter")
-		frappe.logger().info("Cache Redis limpo: Hash lms_lock_chapter removido com sucesso.")
+		frappe.logger().info("Redis cache cleared: Hash lms_lock_chapter removed successfully.")
 
 	except Exception as e:
-		frappe.logger().warning(f"Erro ao limpar cache Redis: {str(e)}")
-		# Não falha completamente se Redis tiver problemas
+		frappe.logger().warning(f"Error clearing Redis cache: {str(e)}")
+		# Do not fail completely if Redis has issues
 
 
-def _remove_doc_events():
+def _remove_doc_events() -> None:
 	"""
-	Remove registros de document events criados pelo app.
-	Nota: Os eventos em hooks.py são automáticamente desativados
-	quando o app é removido, mas limpamos qualquer registro no banco.
+	Removes document events records created by the app.
+	Note: Events in hooks.py are automatically deactivated
+	when the app is removed, but we clean up any DB records.
 	"""
-	frappe.logger().info("Removendo document events do banco de dados...")
+	frappe.logger().info("Removing document events from database...")
 
 	try:
-		# Document events criados pelo app são registrados via hooks
-		# Quando o app é removido, Frappe automaticamente os desativa
-		# Mas podemos limpar quaisquer dados associados
-
-		# Limpar qualquer "LMS Course Progress" marcado com flag do app
-		# (se tivéssemos criado algum campo customizado)
+		# Document events created by the app are registered via hooks.
+		# When the app is removed, Frappe automatically deactivates them,
+		# but we can clean up any associated data.
 		pass
 
-		frappe.logger().info("Document events foram desativados.")
+		frappe.logger().info("Document events have been deactivated.")
 
 	except Exception as e:
-		frappe.logger().warning(f"Erro ao remover doc events: {str(e)}")
+		frappe.logger().warning(f"Error removing document events: {str(e)}")
 
 
-def _remove_client_scripts():
+def _remove_client_scripts() -> None:
 	"""
-	Remove Client Scripts customizados criados pelo app.
-	Mantém scripts de outros apps intactos.
+	Removes custom Client Scripts created by the app.
+	Keeps client scripts from other apps intact.
 	"""
-	frappe.logger().info("Removendo Client Scripts customizados...")
+	frappe.logger().info("Removing custom Client Scripts...")
 
 	try:
 		client_scripts = frappe.get_all(
 			"Client Script",
 			filters={
-				"module": "LMS Lock Chapter",  # Module padrão do app
+				"module": "LMS Lock Chapter",  # Default module of the app
 				"enabled": 1
 			},
 			fields=["name"]
@@ -105,42 +102,41 @@ def _remove_client_scripts():
 		for script in client_scripts:
 			try:
 				frappe.delete_doc("Client Script", script.name, force=True)
-				frappe.logger().info(f"Client Script removido: {script.name}")
+				frappe.logger().info(f"Client Script removed: {script.name}")
 			except frappe.DoesNotExistError:
 				pass
 			except Exception as e:
-				frappe.logger().warning(f"Erro ao remover Client Script {script.name}: {str(e)}")
+				frappe.logger().warning(f"Error removing Client Script {script.name}: {str(e)}")
 
 	except Exception as e:
-		frappe.logger().warning(f"Erro ao remover Client Scripts: {str(e)}")
+		frappe.logger().warning(f"Error removing Client Scripts: {str(e)}")
 
 
-def _clean_session_data():
+def _clean_session_data() -> None:
 	"""
-	Remove qualquer dados de sessão associados ao app.
-	Limpa flags e dados temporários em frappe.session.data.
+	Removes any session data associated with the app.
+	Clears flags and temporary data in frappe.session.data.
 	"""
-	frappe.logger().info("Limpando dados de sessão...")
+	frappe.logger().info("Clearing session data...")
 
 	try:
-		# Limpar qualquer flag de sessão específica do app
-		# (Se tivéssemos armazenado algo em frappe.session.data)
+		# Clear any specific session flag for the app if stored in frappe.session.data
 		pass
 
-		frappe.logger().info("Dados de sessão limpos.")
+		frappe.logger().info("Session data cleared.")
 
 	except Exception as e:
-		frappe.logger().warning(f"Erro ao limpar dados de sessão: {str(e)}")
+		frappe.logger().warning(f"Error clearing session data: {str(e)}")
 
 
-def before_uninstall():
+def before_uninstall() -> None:
 	"""
-	Hook chamado ANTES da desinstalação do app.
-	Usado para validações ou backups se necessário.
+	Hook called BEFORE the app is uninstalled.
+	Used for validations or backups if necessary.
 	"""
-	frappe.logger().info("Preparando desinstalação do app lms_lock_chapter...")
+	frappe.logger().info("Preparing uninstallation of lms_lock_chapter app...")
 
-	# Validação opcional: verificar se há cursos ativos
+	# Optional validation: check if there are active courses
 	try:
 		active_courses = frappe.db.count(
 			"LMS Course",
@@ -149,9 +145,9 @@ def before_uninstall():
 
 		if active_courses > 0:
 			frappe.logger().warning(
-				f"Desinstalando app com {active_courses} cursos publicados. "
-				"Todos os capítulos ficarão acessíveis após a desinstalação."
+				f"Uninstalling app with {active_courses} published courses. "
+				"All chapters will become accessible after uninstallation."
 			)
 
 	except Exception as e:
-		frappe.logger().warning(f"Erro ao validar estado dos cursos: {str(e)}")
+		frappe.logger().warning(f"Error validating course status: {str(e)}")

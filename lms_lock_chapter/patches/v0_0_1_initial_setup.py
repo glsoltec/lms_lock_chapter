@@ -1,24 +1,25 @@
 """
-Initial setup patch for lms_lock_chapter v0.0.1
+Initial setup patch for lms_lock_chapter v0.0.1.
 
-Este patch é executado uma vez após a instalação ou upgrade para v0.0.1.
+This patch is executed once after installation or upgrade to v0.0.1.
 """
 
 import frappe
 
 
-def execute():
+def execute() -> None:
 	"""
-	Executa setup inicial do app.
-	Frappe chama automaticamente quando app é instalado/upgraded.
+	Executes initial setup for the app.
+	Frappe calls this automatically when the app is installed or upgraded.
 	"""
-	frappe.logger().info("Executando patch inicial de setup do lms_lock_chapter...")
+	frappe.logger().info("Executing initial setup patch for lms_lock_chapter...")
 
 	try:
-		# Setup inicial já é feito em install.py
-		# Este patch serve como documentação e backup de inicialização
-		frappe.logger().info("Patch v0.0.1 concluído com sucesso.")
+		# Initial setup is already handled in install.py.
+		# This patch serves as documentation and fallback initialization.
+		frappe.logger().info("Patch v0.0.1 completed successfully.")
 
 	except Exception as e:
-		frappe.logger().error(f"Erro no patch v0.0.1: {str(e)}")
+		frappe.logger().error(f"Error in patch v0.0.1: {str(e)}")
 		raise
+
