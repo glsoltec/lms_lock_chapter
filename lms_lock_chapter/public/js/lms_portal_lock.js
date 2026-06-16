@@ -131,7 +131,7 @@
 
         // Usa fetch nativo (não o patcheado) para evitar loop
         var origFetch = window._origFetch || window.fetch;
-        origFetch("/api/method/lms_lock.lms_overrides.get_locked_chapters?course=" +
+        origFetch("/api/method/lms_lock_chapter.lms_overrides.get_locked_chapters?course=" +
                   encodeURIComponent(course), { credentials: "same-origin" })
             .then(function (r) { return r.json(); })
             .then(function (d) {

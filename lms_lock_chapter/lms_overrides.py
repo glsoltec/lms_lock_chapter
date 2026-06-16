@@ -27,7 +27,7 @@ def inject_portal_script(response):
             return
 
         script_tag = (
-            b'\n<script src="/assets/lms_lock/js/lms_portal_lock.js">'
+            b'\n<script src="/assets/lms_lock_chapter/js/lms_portal_lock.js">'
             b"</script>"
         )
         response.set_data(data.replace(b"</body>", script_tag + b"</body>", 1))
@@ -200,7 +200,7 @@ def invalidate_chapter_completion_cache(doc, method=None):
         chapter = doc.get("chapter") or doc.get("lesson")
         if chapter:
             cache_key = _chapter_cache_key(doc.course, chapter, doc.member)
-            frappe.cache().hdel("lms_lock", cache_key)
+            frappe.cache().hdel("lms_lock_chapter", cache_key)
 
 
 def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
@@ -213,7 +213,7 @@ def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
     cache_key = _chapter_cache_key(course, chapter, user)
 
     # Só confia no cache se o valor for 1 (concluído)
-    cached_status = frappe.cache().hget("lms_lock", cache_key)
+    cached_status = frappe.cache().hget("lms_lock_chapter", cache_key)
     if cached_status == 1 or cached_status == b"1" or cached_status is True:
         return True
 
@@ -242,7 +242,7 @@ def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
 
     # Cache apenas quando concluído; incompleto sempre relê o banco
     if completed:
-        frappe.cache().hset("lms_lock", cache_key, 1)
+        frappe.cache().hset("lms_lock_chapter", cache_key, 1)
 
     return completed
 
@@ -302,7 +302,7 @@ def check_lesson_permission(doc, ptype="read", user=None):
         return True
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "lms_lock: check_lesson_permission error")
+        frappe.log_error(frappe.get_traceback(), "lms_lock_chapter: check_lesson_permission error")
         return None
 
 
@@ -358,5 +358,5 @@ def check_chapter_permission_hook(doc, ptype="read", user=None):
         return True
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "lms_lock: check_chapter_permission_hook error")
+        frappe.log_error(frappe.get_traceback(), "lms_lock_chapter: check_chapter_permission_hook error")
         return None

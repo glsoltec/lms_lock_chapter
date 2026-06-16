@@ -1,6 +1,6 @@
-### Lms Lock
+### LMS Lock Chapter
 
-Bloquear Capitulos
+Controle de acesso sequencial a capítulos em cursos LMS
 
 ### Installation
 
@@ -9,7 +9,7 @@ You can install this app using the [bench](https://github.com/frappe/bench) CLI:
 ```bash
 cd $PATH_TO_YOUR_BENCH
 bench get-app $URL_OF_THIS_REPO --branch version-16
-bench install-app lms_lock
+bench install-app lms_lock_chapter
 ```
 
 ### Contributing
@@ -17,7 +17,7 @@ bench install-app lms_lock
 This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
 
 ```bash
-cd apps/lms_lock
+cd apps/lms_lock_chapter
 pre-commit install
 ```
 

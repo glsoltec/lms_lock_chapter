@@ -4,7 +4,7 @@ frappe.ui.form.on('LMS Course', {
 
         const applyChapterLock = () => {
             frappe.call({
-                method: 'lms_lock.lms_overrides.get_locked_chapters',
+                method: 'lms_lock_chapter.lms_overrides.get_locked_chapters',
                 args: { course: frm.doc.name },
                 callback: function(r) {
                     const locked = r.message || [];
