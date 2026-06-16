@@ -2,6 +2,12 @@ frappe.ui.form.on("LMS Course", {
 	refresh: function (frm) {
 		if (frm.doc.__islocal) return;
 
+		const getChapterFromUrl = (url) => {
+			if (!url) return null;
+			const match = url.match(/\/chapter\/([^/]+)/);
+			return match ? decodeURIComponent(match[1]) : null;
+		};
+
 		const applyChapterLock = () => {
 			frappe.call({
 				method: "lms_lock_chapter.lms_overrides.get_locked_chapters",
@@ -25,9 +31,13 @@ frappe.ui.form.on("LMS Course", {
 						// Verify via data-chapter attribute or element text content
 						const dataChapter = $el.data("chapter") || $el.attr("data-chapter") || "";
 						const textContent = $el.text().trim();
+						const href = $el.attr("href") || "";
+						const targetChapter = dataChapter || getChapterFromUrl(href);
 
 						const isLocked = locked.some(
-							(ch) => (dataChapter && dataChapter === ch) || textContent.includes(ch)
+							(ch) =>
+								(targetChapter && (targetChapter === ch || targetChapter === encodeURIComponent(ch))) ||
+								textContent === ch
 						);
 
 						if (!isLocked) return;
@@ -73,4 +83,5 @@ frappe.ui.form.on("LMS Course", {
 		}
 	},
 });
+
 

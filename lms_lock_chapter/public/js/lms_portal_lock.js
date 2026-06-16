@@ -125,18 +125,24 @@
 		return m ? decodeURIComponent(m[1]) : null;
 	}
 
+	function getChapterFromUrl(url) {
+		if (!url) return null;
+		var match = url.match(/\/chapter\/([^/]+)/);
+		return match ? decodeURIComponent(match[1]) : null;
+	}
+
 	function applyLocks(lockedChapters) {
 		if (!lockedChapters || !lockedChapters.length) return;
 
 		document.querySelectorAll("a[href], [data-chapter]").forEach(function (el) {
 			var href = el.getAttribute("href") || "";
 			var chAttr = el.getAttribute("data-chapter") || "";
+			var targetChapter = chAttr || getChapterFromUrl(href);
+
+			if (!targetChapter) return;
 
 			var isLocked = lockedChapters.some(function (ch) {
-				return (
-					(chAttr && chAttr === ch) ||
-					(href && (href.indexOf(encodeURIComponent(ch)) !== -1 || href.indexOf(ch) !== -1))
-				);
+				return ch === targetChapter || encodeURIComponent(ch) === targetChapter;
 			});
 
 			if (!isLocked || el.hasAttribute("data-lms-locked")) return;
@@ -178,9 +184,14 @@
 
 				// Direct access to a blocked chapter via URL
 				var path = window.location.pathname;
-				var directAccess = locked.some(function (ch) {
-					return path.indexOf(encodeURIComponent(ch)) !== -1 || path.indexOf(ch) !== -1;
-				});
+				var directAccess = false;
+				var chapterMatch = path.match(/\/chapter\/([^/]+)/);
+				if (chapterMatch) {
+					var currentChapter = decodeURIComponent(chapterMatch[1]);
+					directAccess = locked.some(function (ch) {
+						return ch === currentChapter || encodeURIComponent(ch) === currentChapter;
+					});
+				}
 
 				if (directAccess) {
 					showBlockedMessage();
