@@ -85,14 +85,14 @@ app_license = "mit"
 # Installation
 # ------------
 
-# before_install = "lms_lock_chapter.install.before_install"
-# after_install = "lms_lock_chapter.install.after_install"
+before_install = "lms_lock_chapter.install.before_install"
+after_install = "lms_lock_chapter.install.after_install"
 
 # Uninstallation
 # ------------
 
-# before_uninstall = "lms_lock_chapter.uninstall.before_uninstall"
-# after_uninstall = "lms_lock_chapter.uninstall.after_uninstall"
+before_uninstall = "lms_lock_chapter.uninstall.before_uninstall"
+after_uninstall = "lms_lock_chapter.uninstall.after_uninstall"
 
 # Integration Setup
 # ------------------
