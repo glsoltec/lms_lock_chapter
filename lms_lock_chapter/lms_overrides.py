@@ -543,16 +543,16 @@ def check_lesson_permission(doc, ptype: str = "read", user: str | None = None) -
 
 		current_idx = chapter_names.index(lesson_chapter)
 
-		# First chapter: always accessible
+		# First chapter: always accessible (no sequential lock)
 		if current_idx == 0:
-			return None
+			return None  # Skip sequential lock, allow standard permissions
 
 		previous_chapter = chapter_names[current_idx - 1]
 		if not is_chapter_completed(course_name, previous_chapter, user):
 			_add_blocked_message()
 			return False
 
-		return None
+		return None  # Chapter is unlocked, allow access
 
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "lms_lock_chapter: check_lesson_permission error")
@@ -598,16 +598,16 @@ def check_chapter_permission_hook(doc, ptype: str = "read", user: str | None = N
 
 		current_idx = chapter_names.index(chapter_name)
 
-		# First chapter: always accessible
+		# First chapter: always accessible (no sequential lock)
 		if current_idx == 0:
-			return None
+			return None  # Skip sequential lock, allow standard permissions
 
 		previous_chapter = chapter_names[current_idx - 1]
 		if not is_chapter_completed(course_name, previous_chapter, user):
 			_add_blocked_message()
 			return False
 
-		return None
+		return None  # Chapter is unlocked, allow access
 
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "lms_lock_chapter: check_chapter_permission_hook error")
