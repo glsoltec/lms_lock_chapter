@@ -173,7 +173,7 @@ def _get_course_for_chapter(chapter_name: str) -> str | None:
 
 
 def _get_ordered_chapters(course_name: str) -> list[str]:
-	"""Returns an ordered list of published, existing chapter names for a course."""
+	"""Returns an ordered list of published, existing, and non-empty chapter names for a course."""
 	try:
 		rows = frappe.get_all(
 			"Chapter Reference",
@@ -190,6 +190,14 @@ def _get_ordered_chapters(course_name: str) -> list[str]:
 			pass
 
 		has_published_field = meta and meta.has_field("published")
+		has_scorm_field = meta and meta.has_field("is_scorm_package")
+
+		lesson_meta = None
+		try:
+			lesson_meta = frappe.get_meta("Course Lesson")
+		except Exception:
+			pass
+		has_lesson_published = lesson_meta and lesson_meta.has_field("published")
 
 		for r in rows:
 			chapter_val = r.get("chapter") if isinstance(r, dict) else getattr(r, "chapter", None)
@@ -205,6 +213,37 @@ def _get_ordered_chapters(course_name: str) -> list[str]:
 				is_published = frappe.db.get_value("Course Chapter", chapter_val, "published")
 				if not is_published:
 					continue
+
+			# Filter out empty or draft-only chapters
+			is_scorm = False
+			if has_scorm_field:
+				is_scorm = frappe.db.get_value("Course Chapter", chapter_val, "is_scorm_package")
+
+			if not is_scorm:
+				# It is a normal chapter: check if it has at least one published lesson
+				lessons = frappe.get_all(
+					"Lesson Reference",
+					filters={"parent": chapter_val, "parenttype": "Course Chapter"},
+					fields=["lesson"]
+				)
+				lesson_names = []
+				for l in lessons:
+					val = l.get("lesson") if isinstance(l, dict) else getattr(l, "lesson", None)
+					if val:
+						lesson_names.append(val)
+
+				if not lesson_names:
+					# No lessons at all: empty chapter, skip it
+					continue
+
+				if has_lesson_published:
+					published_lessons_count = frappe.db.count(
+						"Course Lesson",
+						filters={"name": ["in", lesson_names], "published": 1}
+					)
+					if published_lessons_count == 0:
+						# No published lessons in this chapter: skip it
+						continue
 
 			chapters.append(chapter_val)
 
