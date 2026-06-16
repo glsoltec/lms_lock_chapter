@@ -69,6 +69,39 @@ def _add_blocked_message() -> None:
 	)
 
 
+def _get_course_name_by_slug(course_slug: str) -> str | None:
+	"""Resolves the actual LMS Course document name from a slug/route."""
+	if not course_slug:
+		return None
+
+	# 1. Direct match by name
+	if frappe.db.exists("LMS Course", course_slug):
+		return course_slug
+
+	# 2. Match by route field (try various patterns)
+	patterns = [
+		course_slug,
+		f"courses/{course_slug}",
+		f"/courses/{course_slug}",
+		f"lms/courses/{course_slug}",
+		f"/lms/courses/{course_slug}"
+	]
+	for p in patterns:
+		course_name = frappe.db.get_value("LMS Course", {"route": p}, "name")
+		if course_name:
+			return course_name
+
+	# 3. Case-insensitive name match (e.g., nr05 -> NR-05)
+	cleaned = course_slug.lower().replace("-", "").replace("_", "")
+	courses = frappe.get_all("LMS Course", fields=["name"])
+	for c in courses:
+		c_clean = c.name.lower().replace("-", "").replace("_", "")
+		if c_clean == cleaned:
+			return c.name
+
+	return None
+
+
 def _get_course_from_request() -> str | None:
 	"""Attempts to extract the course name from the current request path or HTTP Referer."""
 	if not hasattr(frappe.local, "request") or not frappe.local.request:
@@ -77,28 +110,32 @@ def _get_course_from_request() -> str | None:
 	import re
 	from urllib.parse import urlparse
 
+	course_slug = None
+
 	# 1. Try to get course from path (for direct page requests)
 	path = getattr(frappe.local.request, "path", "") or ""
 	match = re.search(r"/(?:lms/)?courses/([^/]+)", path)
 	if match:
-		return match.group(1)
+		course_slug = match.group(1)
 
 	# 2. Try to get course from Referer header (for API requests made by the frontend)
-	referer = frappe.local.request.headers.get("Referer", "")
-	if referer:
-		try:
-			parsed_url = urlparse(referer)
-			match = re.search(r"/(?:lms/)?courses/([^/]+)", parsed_url.path)
-			if match:
-				return match.group(1)
-		except Exception:
-			pass
+	if not course_slug:
+		referer = frappe.local.request.headers.get("Referer", "")
+		if referer:
+			try:
+				parsed_url = urlparse(referer)
+				match = re.search(r"/(?:lms/)?courses/([^/]+)", parsed_url.path)
+				if match:
+					course_slug = match.group(1)
+			except Exception:
+				pass
 
 	# 3. Try to get course from request parameters (e.g. GET/POST args)
-	if hasattr(frappe, "form_dict") and frappe.form_dict:
-		course = frappe.form_dict.get("course")
-		if course:
-			return course
+	if not course_slug and hasattr(frappe, "form_dict") and frappe.form_dict:
+		course_slug = frappe.form_dict.get("course")
+
+	if course_slug:
+		return _get_course_name_by_slug(course_slug)
 
 	return None
 
@@ -251,14 +288,19 @@ def get_locked_chapters(course: str) -> list[str]:
 	if not course:
 		return []
 
+	# Resolve course slug to actual document name
+	course_name = _get_course_name_by_slug(course)
+	if not course_name:
+		return []
+
 	# Security verification: Check if the user has read permission on the course
-	if not frappe.has_permission("LMS Course", "read", course):
+	if not frappe.has_permission("LMS Course", "read", course_name):
 		frappe.throw(
 			msg=frappe._("You do not have permission to access this course."),
 			exc=frappe.PermissionError,
 		)
 
-	chapter_names = _get_ordered_chapters(course)
+	chapter_names = _get_ordered_chapters(course_name)
 	if not chapter_names:
 		return []
 
@@ -271,7 +313,7 @@ def get_locked_chapters(course: str) -> list[str]:
 
 	progress_records = frappe.get_all(
 		"LMS Course Progress",
-		filters={"course": course, "member": frappe.session.user, "status": "Complete"},
+		filters={"course": course_name, "member": frappe.session.user, "status": "Complete"},
 		fields=["chapter", "lesson"],
 	)
 
@@ -283,7 +325,7 @@ def get_locked_chapters(course: str) -> list[str]:
 		if i == 0:
 			continue  # First chapter is never locked
 		previous_chapter = chapter_names[i - 1]
-		if not check_completion_optimized(course, previous_chapter, completed_chapters, completed_lessons):
+		if not check_completion_optimized(course_name, previous_chapter, completed_chapters, completed_lessons):
 			locked.append(chapter)
 
 	return locked
