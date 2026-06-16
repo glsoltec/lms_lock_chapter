@@ -71,158 +71,185 @@ def _add_blocked_message() -> None:
 
 def _get_course_name_by_slug(course_slug: str) -> str | None:
 	"""Resolves the actual LMS Course document name from a slug/route."""
-	if not course_slug:
-		return None
+	try:
+		if not course_slug:
+			return None
+		if not isinstance(course_slug, str):
+			course_slug = str(course_slug)
 
-	# 1. Direct match by name
-	if frappe.db.exists("LMS Course", course_slug):
-		return course_slug
+		# 1. Direct match by name
+		if frappe.db.exists("LMS Course", course_slug):
+			return course_slug
 
-	# 2. Match by route field (try various patterns)
-	patterns = [
-		course_slug,
-		f"courses/{course_slug}",
-		f"/courses/{course_slug}",
-		f"lms/courses/{course_slug}",
-		f"/lms/courses/{course_slug}"
-	]
-	for p in patterns:
-		course_name = frappe.db.get_value("LMS Course", {"route": p}, "name")
-		if course_name:
-			return course_name
+		# 2. Match by route field (try various patterns)
+		patterns = [
+			course_slug,
+			f"courses/{course_slug}",
+			f"/courses/{course_slug}",
+			f"lms/courses/{course_slug}",
+			f"/lms/courses/{course_slug}"
+		]
+		for p in patterns:
+			course_name = frappe.db.get_value("LMS Course", {"route": p}, "name")
+			if course_name:
+				return course_name
 
-	# 3. Case-insensitive name match (e.g., nr05 -> NR-05)
-	cleaned = course_slug.lower().replace("-", "").replace("_", "")
-	courses = frappe.get_all("LMS Course", fields=["name"])
-	for c in courses:
-		c_clean = c.name.lower().replace("-", "").replace("_", "")
-		if c_clean == cleaned:
-			return c.name
+		# 3. Case-insensitive name match (e.g., nr05 -> NR-05)
+		cleaned = course_slug.lower().replace("-", "").replace("_", "")
+		courses = frappe.get_all("LMS Course", fields=["name"]) or []
+		for c in courses:
+			c_name = c.get("name") if isinstance(c, dict) else getattr(c, "name", None)
+			if c_name:
+				c_clean = c_name.lower().replace("-", "").replace("_", "")
+				if c_clean == cleaned:
+					return c_name
+	except Exception:
+		pass
 
 	return None
 
 
 def _get_course_from_request() -> str | None:
 	"""Attempts to extract the course name from the current request path or HTTP Referer."""
-	if not hasattr(frappe.local, "request") or not frappe.local.request:
-		return None
+	try:
+		if not hasattr(frappe.local, "request") or not frappe.local.request:
+			return None
 
-	import re
-	from urllib.parse import urlparse
+		import re
+		from urllib.parse import urlparse
 
-	course_slug = None
+		course_slug = None
 
-	# 1. Try to get course from path (for direct page requests)
-	path = getattr(frappe.local.request, "path", "") or ""
-	match = re.search(r"/(?:lms/)?courses/([^/]+)", path)
-	if match:
-		course_slug = match.group(1)
+		# 1. Try to get course from path (for direct page requests)
+		path = getattr(frappe.local.request, "path", "") or ""
+		match = re.search(r"/(?:lms/)?courses/([^/]+)", path)
+		if match:
+			course_slug = match.group(1)
 
-	# 2. Try to get course from Referer header (for API requests made by the frontend)
-	if not course_slug:
-		referer = frappe.local.request.headers.get("Referer", "")
-		if referer:
-			try:
-				parsed_url = urlparse(referer)
-				match = re.search(r"/(?:lms/)?courses/([^/]+)", parsed_url.path)
-				if match:
-					course_slug = match.group(1)
-			except Exception:
-				pass
+		# 2. Try to get course from Referer header (for API requests made by the frontend)
+		if not course_slug:
+			referer = frappe.local.request.headers.get("Referer", "")
+			if referer:
+				try:
+					parsed_url = urlparse(referer)
+					match = re.search(r"/(?:lms/)?courses/([^/]+)", parsed_url.path)
+					if match:
+						course_slug = match.group(1)
+				except Exception:
+					pass
 
-	# 3. Try to get course from request parameters (e.g. GET/POST args)
-	if not course_slug and hasattr(frappe, "form_dict") and frappe.form_dict:
-		course_slug = frappe.form_dict.get("course")
+		# 3. Try to get course from request parameters (e.g. GET/POST args)
+		if not course_slug and hasattr(frappe, "form_dict") and frappe.form_dict:
+			course_slug = frappe.form_dict.get("course")
 
-	if course_slug:
-		return _get_course_name_by_slug(course_slug)
+		if course_slug:
+			return _get_course_name_by_slug(course_slug)
+	except Exception:
+		pass
 
 	return None
 
 
 def _get_course_for_chapter(chapter_name: str) -> str | None:
 	"""Fetches the parent course of a chapter, prioritizing the course from request context."""
-	course_from_req = _get_course_from_request()
-	if course_from_req:
-		exists = frappe.db.exists("Chapter Reference", {
-			"chapter": chapter_name,
-			"parent": course_from_req,
-			"parenttype": "LMS Course"
-		})
-		if exists:
-			return course_from_req
-
-	return frappe.db.get_value(
-		"Chapter Reference",
-		{"chapter": chapter_name, "parenttype": "LMS Course"},
-		"parent"
-	)
-
-
-def _get_ordered_chapters(course_name: str) -> list[str]:
-	"""Returns an ordered list of published, existing chapter names for a course."""
-	rows = frappe.get_all(
-		"Chapter Reference",
-		filters={"parent": course_name, "parenttype": "LMS Course"},
-		fields=["chapter"],
-		order_by="idx asc",
-	)
-
-	chapters = []
-	meta = None
 	try:
-		meta = frappe.get_meta("Course Chapter")
-	except Exception:
-		pass
-
-	has_published_field = meta and meta.has_field("published")
-
-	for r in rows:
-		if not r.chapter:
-			continue
-
-		# Check if the Course Chapter document actually exists
-		if not frappe.db.exists("Course Chapter", r.chapter):
-			continue
-
-		# Filter by published status if the field exists
-		if has_published_field:
-			is_published = frappe.db.get_value("Course Chapter", r.chapter, "published")
-			if not is_published:
-				continue
-
-		chapters.append(r.chapter)
-
-	return chapters
-
-
-def _get_course_for_lesson(lesson_name: str) -> tuple[str | None, str | None]:
-	"""Fetches the course and chapter of a lesson, prioritizing request context."""
-	chapters = frappe.get_all(
-		"Lesson Reference",
-		filters={"lesson": lesson_name, "parenttype": "Course Chapter"},
-		fields=["parent"]
-	)
-	if not chapters:
-		return None, None
-
-	chapter_names = [c.parent for c in chapters]
-
-	course_from_req = _get_course_from_request()
-	if course_from_req:
-		for ch in chapter_names:
+		course_from_req = _get_course_from_request()
+		if course_from_req:
 			exists = frappe.db.exists("Chapter Reference", {
-				"chapter": ch,
+				"chapter": chapter_name,
 				"parent": course_from_req,
 				"parenttype": "LMS Course"
 			})
 			if exists:
-				return course_from_req, ch
+				return course_from_req
 
-	# Fallback
-	first_chapter = chapter_names[0]
-	course_name = _get_course_for_chapter(first_chapter)
-	return course_name, first_chapter
+		return frappe.db.get_value(
+			"Chapter Reference",
+			{"chapter": chapter_name, "parenttype": "LMS Course"},
+			"parent"
+		)
+	except Exception:
+		return None
+
+
+def _get_ordered_chapters(course_name: str) -> list[str]:
+	"""Returns an ordered list of published, existing chapter names for a course."""
+	try:
+		rows = frappe.get_all(
+			"Chapter Reference",
+			filters={"parent": course_name, "parenttype": "LMS Course"},
+			fields=["chapter"],
+			order_by="idx asc",
+		)
+
+		chapters = []
+		meta = None
+		try:
+			meta = frappe.get_meta("Course Chapter")
+		except Exception:
+			pass
+
+		has_published_field = meta and meta.has_field("published")
+
+		for r in rows:
+			chapter_val = r.get("chapter") if isinstance(r, dict) else getattr(r, "chapter", None)
+			if not chapter_val:
+				continue
+
+			# Check if the Course Chapter document actually exists
+			if not frappe.db.exists("Course Chapter", chapter_val):
+				continue
+
+			# Filter by published status if the field exists
+			if has_published_field:
+				is_published = frappe.db.get_value("Course Chapter", chapter_val, "published")
+				if not is_published:
+					continue
+
+			chapters.append(chapter_val)
+
+		return chapters
+	except Exception:
+		return []
+
+
+def _get_course_for_lesson(lesson_name: str) -> tuple[str | None, str | None]:
+	"""Fetches the course and chapter of a lesson, prioritizing request context."""
+	try:
+		chapters = frappe.get_all(
+			"Lesson Reference",
+			filters={"lesson": lesson_name, "parenttype": "Course Chapter"},
+			fields=["parent"]
+		)
+		if not chapters:
+			return None, None
+
+		chapter_names = []
+		for c in chapters:
+			parent_val = c.get("parent") if isinstance(c, dict) else getattr(c, "parent", None)
+			if parent_val:
+				chapter_names.append(parent_val)
+
+		if not chapter_names:
+			return None, None
+
+		course_from_req = _get_course_from_request()
+		if course_from_req:
+			for ch in chapter_names:
+				exists = frappe.db.exists("Chapter Reference", {
+					"chapter": ch,
+					"parent": course_from_req,
+					"parenttype": "LMS Course"
+				})
+				if exists:
+					return course_from_req, ch
+
+		# Fallback
+		first_chapter = chapter_names[0]
+		course_name = _get_course_for_chapter(first_chapter)
+		return course_name, first_chapter
+	except Exception:
+		return None, None
 
 
 def get_doc_field(doc, field: str, default=None):
@@ -253,33 +280,42 @@ _FRAPPE_PTYPES = frozenset({
 
 class LMSCourseLMSLock(LMSCourse):
 	def check_permission(self, ptype_or_chapter=None, *args, **kwargs) -> bool:
-		# When Frappe calls check_permission("write", "save") to save/delete the document,
-		# delegate to the default behavior without interference.
-		if ptype_or_chapter in _FRAPPE_PTYPES:
-			return super().check_permission(ptype_or_chapter, *args, **kwargs)
+		try:
+			# When Frappe calls check_permission("read") or similar,
+			# delegate to the default behavior without interference.
+			if ptype_or_chapter in _FRAPPE_PTYPES:
+				permtype = ptype_or_chapter or "read"
+				permlevel = kwargs.get("permlevel") or (args[0] if args else None)
+				super().check_permission(permtype, permlevel)
+				return True
 
-		# When LMS calls check_permission(chapter_name) to verify access to a chapter,
-		# apply the sequential lock logic.
-		chapter = ptype_or_chapter
+			# When LMS calls check_permission(chapter_name) to verify access to a chapter,
+			# apply the sequential lock logic.
+			chapter = ptype_or_chapter
+			if not chapter:
+				return True
 
-		if not frappe.session.user or frappe.session.user == "Guest":
-			return False
+			if not frappe.session.user or frappe.session.user == "Guest":
+				return False
 
-		user_roles = set(frappe.get_roles())
-		if user_roles & BYPASS_ROLES:
+			user_roles = set(frappe.get_roles())
+			if user_roles & BYPASS_ROLES:
+				return True
+
+			chapter_names = _get_ordered_chapters(self.name)
+
+			if chapter not in chapter_names:
+				return True  # Does not belong to this course; allow access
+
+			current_idx = chapter_names.index(chapter)
+			if current_idx == 0:
+				return True
+
+			previous_chapter = chapter_names[current_idx - 1]
+			return is_chapter_completed(self.name, previous_chapter, frappe.session.user)
+		except Exception:
+			# Safety fallback: if anything fails, allow access to prevent blocking out users
 			return True
-
-		chapter_names = _get_ordered_chapters(self.name)
-
-		if chapter not in chapter_names:
-			return True  # Does not belong to this course; allow access
-
-		current_idx = chapter_names.index(chapter)
-		if current_idx == 0:
-			return True
-
-		previous_chapter = chapter_names[current_idx - 1]
-		return is_chapter_completed(self.name, previous_chapter, frappe.session.user)
 
 
 @frappe.whitelist()
@@ -335,20 +371,24 @@ def check_completion_optimized(
 	course: str, chapter: str, completed_chapters: set[str], completed_lessons: set[str]
 ) -> bool:
 	"""Verifies completion of a chapter using pre-loaded data."""
-	chapter_doc = frappe.get_cached_value(
-		"Course Chapter", chapter, ["is_scorm_package", "name"], as_dict=True
-	)
-	if not chapter_doc:
+	try:
+		chapter_doc = frappe.get_cached_value(
+			"Course Chapter", chapter, ["is_scorm_package", "name"], as_dict=True
+		)
+		if not chapter_doc:
+			return True
+
+		is_scorm = chapter_doc.get("is_scorm_package") if isinstance(chapter_doc, dict) else getattr(chapter_doc, "is_scorm_package", None)
+		if is_scorm:
+			return chapter in completed_chapters
+
+		lessons = frappe.get_all("Lesson Reference", filters={"parent": chapter}, pluck="lesson")
+		if not lessons:
+			return True
+
+		return all(lesson in completed_lessons for lesson in lessons)
+	except Exception:
 		return True
-
-	if chapter_doc.is_scorm_package:
-		return chapter in completed_chapters
-
-	lessons = frappe.get_all("Lesson Reference", filters={"parent": chapter}, pluck="lesson")
-	if not lessons:
-		return True
-
-	return all(lesson in completed_lessons for lesson in lessons)
 
 
 def _chapter_cache_key(course: str, chapter: str, user: str) -> str:
@@ -382,41 +422,44 @@ def is_chapter_completed(course: str, chapter: str, user: str) -> bool:
 	Redis cache is used only for completed status (True).
 	Incomplete status is never cached to prevent stale caches after progress is made.
 	"""
-	cache_key = _chapter_cache_key(course, chapter, user)
+	try:
+		cache_key = _chapter_cache_key(course, chapter, user)
 
-	# Only trust cache if value is 1 (completed)
-	cached_status = frappe.cache().hget("lms_lock_chapter", cache_key)
-	if cached_status == 1 or cached_status == b"1" or cached_status is True:
-		return True
+		# Only trust cache if value is 1 (completed)
+		cached_status = frappe.cache().hget("lms_lock_chapter", cache_key)
+		if cached_status == 1 or cached_status == b"1" or cached_status is True:
+			return True
 
-	is_scorm = frappe.db.get_value("Course Chapter", chapter, "is_scorm_package")
+		is_scorm = frappe.db.get_value("Course Chapter", chapter, "is_scorm_package")
 
-	completed = False
-	if is_scorm:
-		completed = bool(frappe.db.exists("LMS Course Progress", {
-			"course": course,
-			"member": user,
-			"chapter": chapter,
-			"status": "Complete"
-		}))
-	else:
-		lessons = frappe.get_all("Lesson Reference", filters={"parent": chapter}, pluck="lesson")
-		if not lessons:
-			completed = True
-		else:
-			completed_count = frappe.db.count("LMS Course Progress", {
+		completed = False
+		if is_scorm:
+			completed = bool(frappe.db.exists("LMS Course Progress", {
 				"course": course,
 				"member": user,
-				"lesson": ["in", lessons],
+				"chapter": chapter,
 				"status": "Complete"
-			})
-			completed = (completed_count == len(lessons))
+			}))
+		else:
+			lessons = frappe.get_all("Lesson Reference", filters={"parent": chapter}, pluck="lesson")
+			if not lessons:
+				completed = True
+			else:
+				completed_count = frappe.db.count("LMS Course Progress", {
+					"course": course,
+					"member": user,
+					"lesson": ["in", lessons],
+					"status": "Complete"
+				})
+				completed = (completed_count == len(lessons))
 
-	# Cache only when completed; incomplete reads from the database
-	if completed:
-		frappe.cache().hset("lms_lock_chapter", cache_key, 1)
+		# Cache only when completed; incomplete reads from the database
+		if completed:
+			frappe.cache().hset("lms_lock_chapter", cache_key, 1)
 
-	return completed
+		return completed
+	except Exception:
+		return True
 
 
 def check_lesson_permission(doc, ptype: str = "read", user: str | None = None) -> bool | None:
