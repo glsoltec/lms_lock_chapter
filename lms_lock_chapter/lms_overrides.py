@@ -69,8 +69,52 @@ def _add_blocked_message() -> None:
 	)
 
 
+def _get_course_from_request() -> str | None:
+	"""Attempts to extract the course name from the current request path or HTTP Referer."""
+	if not hasattr(frappe.local, "request") or not frappe.local.request:
+		return None
+
+	import re
+	from urllib.parse import urlparse
+
+	# 1. Try to get course from path (for direct page requests)
+	path = getattr(frappe.local.request, "path", "") or ""
+	match = re.search(r"/(?:lms/)?courses/([^/]+)", path)
+	if match:
+		return match.group(1)
+
+	# 2. Try to get course from Referer header (for API requests made by the frontend)
+	referer = frappe.local.request.headers.get("Referer", "")
+	if referer:
+		try:
+			parsed_url = urlparse(referer)
+			match = re.search(r"/(?:lms/)?courses/([^/]+)", parsed_url.path)
+			if match:
+				return match.group(1)
+		except Exception:
+			pass
+
+	# 3. Try to get course from request parameters (e.g. GET/POST args)
+	if hasattr(frappe, "form_dict") and frappe.form_dict:
+		course = frappe.form_dict.get("course")
+		if course:
+			return course
+
+	return None
+
+
 def _get_course_for_chapter(chapter_name: str) -> str | None:
-	"""Fetches the parent course of a chapter via Chapter Reference (child table of LMS Course)."""
+	"""Fetches the parent course of a chapter, prioritizing the course from request context."""
+	course_from_req = _get_course_from_request()
+	if course_from_req:
+		exists = frappe.db.exists("Chapter Reference", {
+			"chapter": chapter_name,
+			"parent": course_from_req,
+			"parenttype": "LMS Course"
+		})
+		if exists:
+			return course_from_req
+
 	return frappe.db.get_value(
 		"Chapter Reference",
 		{"chapter": chapter_name, "parenttype": "LMS Course"},
@@ -79,27 +123,69 @@ def _get_course_for_chapter(chapter_name: str) -> str | None:
 
 
 def _get_ordered_chapters(course_name: str) -> list[str]:
-	"""Returns an ordered list of chapter names for a course."""
+	"""Returns an ordered list of published, existing chapter names for a course."""
 	rows = frappe.get_all(
 		"Chapter Reference",
 		filters={"parent": course_name, "parenttype": "LMS Course"},
 		fields=["chapter"],
 		order_by="idx asc",
 	)
-	return [r.chapter for r in rows]
+
+	chapters = []
+	meta = None
+	try:
+		meta = frappe.get_meta("Course Chapter")
+	except Exception:
+		pass
+
+	has_published_field = meta and meta.has_field("published")
+
+	for r in rows:
+		if not r.chapter:
+			continue
+
+		# Check if the Course Chapter document actually exists
+		if not frappe.db.exists("Course Chapter", r.chapter):
+			continue
+
+		# Filter by published status if the field exists
+		if has_published_field:
+			is_published = frappe.db.get_value("Course Chapter", r.chapter, "published")
+			if not is_published:
+				continue
+
+		chapters.append(r.chapter)
+
+	return chapters
 
 
 def _get_course_for_lesson(lesson_name: str) -> tuple[str | None, str | None]:
-	"""Fetches the course and chapter of a lesson via Lesson Reference -> Chapter Reference."""
-	chapter_name = frappe.db.get_value(
+	"""Fetches the course and chapter of a lesson, prioritizing request context."""
+	chapters = frappe.get_all(
 		"Lesson Reference",
-		{"lesson": lesson_name, "parenttype": "Course Chapter"},
-		"parent"
+		filters={"lesson": lesson_name, "parenttype": "Course Chapter"},
+		fields=["parent"]
 	)
-	if not chapter_name:
+	if not chapters:
 		return None, None
-	course_name = _get_course_for_chapter(chapter_name)
-	return course_name, chapter_name
+
+	chapter_names = [c.parent for c in chapters]
+
+	course_from_req = _get_course_from_request()
+	if course_from_req:
+		for ch in chapter_names:
+			exists = frappe.db.exists("Chapter Reference", {
+				"chapter": ch,
+				"parent": course_from_req,
+				"parenttype": "LMS Course"
+			})
+			if exists:
+				return course_from_req, ch
+
+	# Fallback
+	first_chapter = chapter_names[0]
+	course_name = _get_course_for_chapter(first_chapter)
+	return course_name, first_chapter
 
 
 def get_doc_field(doc, field: str, default=None):
