@@ -80,19 +80,7 @@ def _get_course_for_chapter(chapter_name: str) -> str | None:
 def _get_ordered_chapters(course_name: str) -> list[str]:
 	try:
 		rows = frappe.get_all("Chapter Reference", filters={"parent": course_name, "parenttype": "LMS Course"}, fields=["chapter"], order_by="idx asc")
-		chapters = []
-		for r in rows:
-			ch = r.get("chapter") if isinstance(r, dict) else getattr(r, "chapter", None)
-			if not ch or not frappe.db.exists("Course Chapter", ch):
-				continue
-			meta = frappe.get_meta("Course Chapter")
-			if meta and meta.has_field("published") and not frappe.db.get_value("Course Chapter", ch, "published"):
-				continue
-			lessons = frappe.get_all("Lesson Reference", filters={"parent": ch, "parenttype": "Course Chapter"}, fields=["lesson"])
-			if not lessons:
-				continue
-			chapters.append(ch)
-		return chapters
+		return [r.get("chapter") if isinstance(r, dict) else getattr(r, "chapter", None) for r in rows if (r.get("chapter") if isinstance(r, dict) else getattr(r, "chapter", None))]
 	except Exception:
 		return []
 
@@ -207,7 +195,7 @@ def check_lesson_permission(doc, ptype: str = "read", user: str | None = None) -
 			return None
 		idx = chapters.index(lesson_chapter)
 		if idx == 0:
-			return None
+			return True
 		if not is_chapter_completed(course_name, chapters[idx - 1], user):
 			_add_blocked_message()
 			return False
@@ -243,7 +231,7 @@ def check_chapter_permission_hook(doc, ptype: str = "read", user: str | None = N
 			return None
 		idx = chapters.index(chapter_name)
 		if idx == 0:
-			return None
+			return True
 		if not is_chapter_completed(course_name, chapters[idx - 1], user):
 			_add_blocked_message()
 			return False
