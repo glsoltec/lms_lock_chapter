@@ -194,9 +194,11 @@ def check_lesson_permission(doc, ptype: str = "read", user: str | None = None) -
 		if not chapters or lesson_chapter not in chapters:
 			return None
 		idx = chapters.index(lesson_chapter)
+		frappe.logger().debug(f"check_lesson_permission: {lesson_name} in course {course_name}, chapter idx {idx}")
 		if idx == 0:
 			return True
 		if not is_chapter_completed(course_name, chapters[idx - 1], user):
+			frappe.logger().info(f"Lesson blocked: {lesson_name} - previous chapter not completed")
 			_add_blocked_message()
 			return False
 		return None
@@ -230,9 +232,11 @@ def check_chapter_permission_hook(doc, ptype: str = "read", user: str | None = N
 		if not chapters or chapter_name not in chapters:
 			return None
 		idx = chapters.index(chapter_name)
+		frappe.logger().debug(f"check_chapter_permission_hook: {chapter_name} in course {course_name}, chapter idx {idx}")
 		if idx == 0:
 			return True
 		if not is_chapter_completed(course_name, chapters[idx - 1], user):
+			frappe.logger().info(f"Chapter blocked: {chapter_name} - previous chapter not completed")
 			_add_blocked_message()
 			return False
 		return None
