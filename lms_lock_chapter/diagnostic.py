@@ -20,10 +20,13 @@ def diagnostic():
 
     # 1. Check if hooks are registered
     print("\n1. HOOKS REGISTRATION:")
-    hooks_config = frappe.get_app_config("lms_lock_chapter")
-    print(f"   - override_doctype_class: {hooks_config.get('override_doctype_class', {})}")
-    print(f"   - has_permission: {hooks_config.get('has_permission', {})}")
-    print(f"   - doc_events: {hooks_config.get('doc_events', {})}")
+    try:
+        from lms_lock_chapter import hooks
+        print(f"   - override_doctype_class: {getattr(hooks, 'override_doctype_class', {})}")
+        print(f"   - has_permission: {getattr(hooks, 'has_permission', {})}")
+        print(f"   - doc_events: {getattr(hooks, 'doc_events', {})}")
+    except Exception as e:
+        print(f"   - Error loading hooks: {e}")
 
     # 2. Check LMS app version
     print("\n2. APP VERSIONS:")

@@ -169,21 +169,25 @@ def invalidate_chapter_completion_cache(doc, method=None) -> None:
 def check_lesson_permission(doc, ptype: str = "read", user: str | None = None) -> bool | None:
 	try:
 		if ptype != "read":
+			frappe.logger().debug(f"check_lesson_permission: ptype={ptype}, returning None")
 			return None
 		if isinstance(doc, str):
 			if doc == "Course Lesson":
+				frappe.logger().debug(f"check_lesson_permission: doc=='Course Lesson', returning None")
 				return None
 			lesson_name = doc
 			course_name, lesson_chapter = _get_course_for_lesson(lesson_name)
 		else:
 			lesson_name = doc.get("name") if isinstance(doc, dict) else getattr(doc, "name", None)
 			if not lesson_name:
+				frappe.logger().debug(f"check_lesson_permission: lesson_name empty, returning None")
 				return None
 			course_name = doc.get("course") if isinstance(doc, dict) else getattr(doc, "course", None)
 			lesson_chapter = doc.get("chapter") if isinstance(doc, dict) else getattr(doc, "chapter", None)
 			if not course_name or not lesson_chapter:
 				course_name, lesson_chapter = _get_course_for_lesson(lesson_name)
 		if not course_name or not lesson_chapter:
+			frappe.logger().debug(f"check_lesson_permission: course_name={course_name}, lesson_chapter={lesson_chapter}, returning None")
 			return None
 		user = user or frappe.session.user
 		if not user or user == "Guest":
