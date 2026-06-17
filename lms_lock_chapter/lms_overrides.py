@@ -189,7 +189,7 @@ def check_lesson_permission(doc, ptype: str = "read", user: str | None = None) -
 		if not user or user == "Guest":
 			return False
 		if set(frappe.get_roles(user)) & BYPASS_ROLES:
-			return None
+			return True
 		chapters = _get_ordered_chapters(course_name)
 		if not chapters or lesson_chapter not in chapters:
 			return None
@@ -227,7 +227,7 @@ def check_chapter_permission_hook(doc, ptype: str = "read", user: str | None = N
 		if not user or user == "Guest":
 			return False
 		if set(frappe.get_roles(user)) & BYPASS_ROLES:
-			return None
+			return True
 		chapters = _get_ordered_chapters(course_name)
 		if not chapters or chapter_name not in chapters:
 			return None
