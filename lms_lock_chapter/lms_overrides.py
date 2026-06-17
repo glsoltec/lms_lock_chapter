@@ -127,18 +127,22 @@ def get_locked_chapters(course: str) -> list[str]:
 	course_name = _get_course_name_by_slug(course)
 	if not course_name:
 		return []
-	if not frappe.has_permission("LMS Course", "read", course_name):
-		frappe.throw("You do not have permission to access this course.", exc=frappe.PermissionError)
+	user = frappe.session.user
+	if user == "Guest":
+		return []
+	if set(frappe.get_roles(user)) & BYPASS_ROLES:
+		return []
+	is_enrolled = frappe.db.exists("LMS Enrollment", {"course": course_name, "member": user})
+	if not is_enrolled and not frappe.has_permission("LMS Course", "read", course_name):
+		return []
 	chapters = _get_ordered_chapters(course_name)
-	if not chapters or not frappe.session.user or frappe.session.user == "Guest":
-		return chapters[1:] if chapters else []
-	if set(frappe.get_roles()) & BYPASS_ROLES:
+	if not chapters:
 		return []
 	locked = []
 	for i, ch in enumerate(chapters):
 		if i == 0:
 			continue
-		if not is_chapter_completed(course_name, chapters[i - 1], frappe.session.user):
+		if not is_chapter_completed(course_name, chapters[i - 1], user):
 			locked.append(ch)
 	return locked
 
