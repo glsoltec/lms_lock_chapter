@@ -172,6 +172,7 @@ def invalidate_chapter_completion_cache(doc, method=None) -> None:
 
 def check_lesson_permission(doc, ptype: str = "read", user: str | None = None) -> bool | None:
 	try:
+		frappe.logger().info(f"check_lesson_permission CALLED: doc={doc}, ptype={ptype}, user={user}")
 		if ptype != "read":
 			frappe.logger().debug(f"check_lesson_permission: ptype={ptype}, returning None")
 			return None
@@ -202,7 +203,7 @@ def check_lesson_permission(doc, ptype: str = "read", user: str | None = None) -
 		if not chapters or lesson_chapter not in chapters:
 			return None
 		idx = chapters.index(lesson_chapter)
-		frappe.logger().debug(f"check_lesson_permission: {lesson_name} in course {course_name}, chapter idx {idx}")
+		frappe.logger().info(f"check_lesson_permission: {lesson_name} in course {course_name}, chapter idx {idx}")
 		if idx == 0:
 			return True
 		if not is_chapter_completed(course_name, chapters[idx - 1], user):
