@@ -1,87 +1,52 @@
+/**
+ * lms_chapter_lock.js — JS do Desk para o formulário LMS Course
+ * Exibe indicadores de bloqueio na visualização administrativa do curso.
+ */
 frappe.ui.form.on("LMS Course", {
 	refresh: function (frm) {
 		if (frm.doc.__islocal) return;
 
-		const getChapterFromUrl = (url) => {
-			if (!url) return null;
-			const match = url.match(/\/chapter\/([^/]+)/);
-			return match ? decodeURIComponent(match[1]) : null;
-		};
+		frappe.call({
+			method: "lms_lock_chapter.api.get_locked_chapters",
+			args: { course: frm.doc.name },
+			callback: function (r) {
+				var locked = r.message || [];
+				if (!locked.length) return;
 
-		const applyChapterLock = () => {
-			frappe.call({
-				method: "lms_lock_chapter.lms_overrides.get_locked_chapters",
-				args: { course: frm.doc.name },
-				callback: function (r) {
-					const locked = r.message || [];
-					if (!locked.length) return;
+				var selectors = [
+					"[data-chapter]",
+					".sidebar-item",
+					".chapter-item",
+					".lesson-container",
+					".chapter-container",
+				].join(", ");
 
-					// Selects any element representing a chapter in the sidebar/content
-					const selectors = [
-						"[data-chapter]",
-						".sidebar-item",
-						".chapter-item",
-						".lesson-container",
-						".chapter-container",
-					].join(", ");
+				$(selectors).each(function () {
+					var $el = $(this);
+					var dataChapter = $el.data("chapter") || $el.attr("data-chapter") || "";
+					var href = $el.attr("href") || "";
+					var chapterFromUrl = "";
+					var m = href.match(/\/chapter\/([^/]+)/);
+					if (m) chapterFromUrl = decodeURIComponent(m[1]);
 
-					$(selectors).each(function () {
-						const $el = $(this);
+					var target = dataChapter || chapterFromUrl;
+					var isLocked = locked.some(
+						(ch) => target && (ch === target || encodeURIComponent(ch) === target)
+					);
 
-						// Verify via data-chapter attribute or element text content
-						const dataChapter = $el.data("chapter") || $el.attr("data-chapter") || "";
-						const textContent = $el.text().trim();
-						const href = $el.attr("href") || "";
-						const targetChapter = dataChapter || getChapterFromUrl(href);
+					if (!isLocked || $el.hasClass("lms-locked-chapter")) return;
 
-						const isLocked = locked.some(
-							(ch) =>
-								(targetChapter && (targetChapter === ch || targetChapter === encodeURIComponent(ch))) ||
-								textContent === ch
-						);
-
-						if (!isLocked) return;
-
-						// Prevent double binding/application
-						if ($el.hasClass("lms-locked-chapter")) return;
-
-						$el.addClass("lms-locked-chapter").css({
-							opacity: "0.5",
-							pointerEvents: "none",
-							cursor: "not-allowed",
-						});
-
-						if (!$el.find(".lms-lock-icon").length) {
-							$el.prepend('<i class="fa fa-lock mr-2 text-warning lms-lock-icon"></i>');
-						}
-
-						$el.on("click.lmslock", function (e) {
-							e.preventDefault();
-							e.stopPropagation();
-							frappe.msgprint({
-								title: __("Chapter Locked"),
-								message: __("Complete the previous chapter to unlock this content."),
-								indicator: "orange",
-							});
-							return false;
-						});
+					$el.addClass("lms-locked-chapter").css({
+						opacity: "0.5",
+						pointerEvents: "none",
+						cursor: "not-allowed",
 					});
-				},
-			});
-		};
 
-		applyChapterLock();
-
-		// Re-apply when DOM is modified (LMS v16 is a SPA)
-		if (!window._lmsLockObserver) {
-			const target = document.querySelector(".lms-container, .layout-main") || document.body;
-			window._lmsLockObserver = new MutationObserver(() => {
-				clearTimeout(window._lmsLockTimer);
-				window._lmsLockTimer = setTimeout(applyChapterLock, 400);
-			});
-			window._lmsLockObserver.observe(target, { childList: true, subtree: true });
-		}
+					if (!$el.find(".lms-lock-icon").length) {
+						$el.prepend('<i class="fa fa-lock mr-1 text-warning lms-lock-icon"></i>');
+					}
+				});
+			},
+		});
 	},
 });
-
-
