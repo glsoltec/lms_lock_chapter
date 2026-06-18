@@ -216,8 +216,38 @@
 	var path = window.location.pathname;
 	if (path.indexOf("/lms") === -1 && path.indexOf("/courses") === -1) return;
 
+	function checkLessonAccessOnLoad() {
+		var path = window.location.pathname;
+		var course = getCourseFromPage();
+
+		// For /learn/ paths, try to get lesson name from page
+		if (path.includes("/learn/") && course) {
+			var lessonName = document.querySelector("[data-name][data-doctype='Course Lesson']");
+			if (lessonName) {
+				lessonName = lessonName.getAttribute("data-name");
+				// Call API to check access
+				var origFetch = window._origFetch || window.fetch;
+				origFetch("/api/method/lms_lock_chapter.lms_overrides.check_lesson_access?course=" +
+					encodeURIComponent(course) + "&lesson=" + encodeURIComponent(lessonName),
+					{ credentials: "same-origin" }
+				)
+					.then(function (r) { return r.json(); })
+					.then(function (d) {
+						if (d.message === false) {
+							showBlockedMessage();
+							setTimeout(function () {
+								window.location.href = "/lms/courses/" + encodeURIComponent(course);
+							}, 2500);
+						}
+					})
+					.catch(function () {});
+			}
+		}
+	}
+
 	function init() {
 		loadAndApplyLocks();
+		checkLessonAccessOnLoad();
 
 		if (!window._lmsPortalLockObserver) {
 			var target = document.querySelector(".page-content, main, #app") || document.body;
