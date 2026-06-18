@@ -121,26 +121,28 @@ class LMSCourseLMSLock(LMSCourse):
 
 
 @frappe.whitelist()
-def check_lesson_access(course: str, lesson: str) -> bool:
-	"""Check if current user can access a specific lesson."""
-	if not course or not lesson:
-		return False
-	course_name = _get_course_name_by_slug(course)
-	if not course_name:
-		return False
-	user = frappe.session.user
-	if user == "Guest":
-		return False
-	if set(frappe.get_roles(user)) & BYPASS_ROLES:
-		return True
-	is_enrolled = frappe.db.exists("LMS Enrollment", {"course": course_name, "member": user})
-	if not is_enrolled and not frappe.has_permission("LMS Course", "read", course_name):
-		return False
-	return check_lesson_permission(lesson, ptype="read", user=user) is not False
+def get_locked_chapters(course: str, lesson: str = None) -> list[str]:
+	"""Get locked chapters, or check specific lesson access if lesson param provided."""
+	if lesson:
+		# Check if specific lesson is accessible
+		if not course or not lesson:
+			return []
+		course_name = _get_course_name_by_slug(course)
+		if not course_name:
+			return []
+		user = frappe.session.user
+		if user == "Guest":
+			return [lesson]  # Block for guests
+		if set(frappe.get_roles(user)) & BYPASS_ROLES:
+			return []  # No blocks for bypass roles
+		is_enrolled = frappe.db.exists("LMS Enrollment", {"course": course_name, "member": user})
+		if not is_enrolled and not frappe.has_permission("LMS Course", "read", course_name):
+			return [lesson]  # Block if not enrolled
+		# Return lesson name if blocked, empty if allowed
+		blocked = check_lesson_permission(lesson, ptype="read", user=user) is False
+		return [lesson] if blocked else []
 
-
-@frappe.whitelist()
-def get_locked_chapters(course: str) -> list[str]:
+	# Original behavior: return locked chapters
 	if not course:
 		return []
 	course_name = _get_course_name_by_slug(course)

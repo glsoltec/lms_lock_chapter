@@ -227,13 +227,14 @@
 				lessonName = lessonName.getAttribute("data-name");
 				// Call API to check access
 				var origFetch = window._origFetch || window.fetch;
-				origFetch("/api/method/lms_lock_chapter.lms_overrides.check_lesson_access?course=" +
+				origFetch("/api/method/lms_lock_chapter.lms_overrides.get_locked_chapters?course=" +
 					encodeURIComponent(course) + "&lesson=" + encodeURIComponent(lessonName),
 					{ credentials: "same-origin" }
 				)
 					.then(function (r) { return r.json(); })
 					.then(function (d) {
-						if (d.message === false) {
+						// If lesson is in the returned array, it's blocked
+						if (d.message && d.message.length > 0) {
 							showBlockedMessage();
 							setTimeout(function () {
 								window.location.href = "/lms/courses/" + encodeURIComponent(course);
